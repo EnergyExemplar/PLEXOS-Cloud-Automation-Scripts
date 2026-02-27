@@ -1,0 +1,8 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/.venv/Lib/site-packages
+/.vs
+/Automation/PLEXOS/CsvToParquet/__pycache__
+/Automation/PLEXOS/UploadToDataHub/__pycache__
