@@ -1,5 +1,5 @@
 # PLEXOS Automation Scripts
-
+# PLEXOS
 This repository contains reusable, ready-to-run automation scripts for PLEXOS and Aurora platforms. Scripts are small, focused, and chainable — each does one thing well and can be composed with others as part of a pre- or post-simulation workflow.
 
 > **Full platform documentation:** [EE Support Portal](https://support.energyexemplar.com)
