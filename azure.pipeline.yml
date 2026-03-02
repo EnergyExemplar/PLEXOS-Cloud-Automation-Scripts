@@ -1,0 +1,71 @@
+trigger:
+- master
+
+pr:
+  branches:
+    include:
+    - master
+    - main
+
+variables:
+  # Agent VM image name
+  vmImageName: 'ubuntu-latest'
+  ingressname: datahub-web-ing
+
+stages:
+
+
+- stage: Set_BuildNumber
+  displayName: Set Build Number
+  jobs:  
+  - job: SetBuildNumber
+    displayName: Set Build Number
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - task: PowerShell@2
+      displayName: 'Set Version'
+      inputs:
+        targetType: 'inline'
+        script: |
+          cd $env:BUILD_SOURCESDIRECTORY\source
+          $versions = Get-Content version.json | ConvertFrom-Json
+          $major = $versions.major
+          $minor = $versions.minor
+          $commitCount = git rev-list --count origin/master
+          $version = "$major.$minor.$commitCount"
+          Write-Host "##vso[build.updatebuildnumber]$version"
+
+- stage: Run_Unit_Tests
+  displayName: Run Unit Tests
+  condition: eq(variables['Build.Reason'], 'PullRequest')
+  jobs:
+  - job: UnitTests
+    displayName: Run Unit Tests
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - task: UsePythonVersion@0
+      displayName: 'Use Python 3.x'
+      inputs:
+        versionSpec: '3.x'
+        addToPath: true
+
+    - script: |
+        python -m pip install --upgrade pip
+        pip install pytest pytest-azurepipelines
+        if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+      displayName: 'Install dependencies'
+
+    - script: |
+        pytest --junitxml=$(Build.ArtifactStagingDirectory)/test-results.xml -v
+      displayName: 'Run pytest'
+
+    - task: PublishTestResults@2
+      displayName: 'Publish Test Results'
+      condition: always()
+      inputs:
+        testResultsFormat: 'JUnit'
+        testResultsFiles: '$(Build.ArtifactStagingDirectory)/test-results.xml'
+        failTaskOnFailedTests: true
+
