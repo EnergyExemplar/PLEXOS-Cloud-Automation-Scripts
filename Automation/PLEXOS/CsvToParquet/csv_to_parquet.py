@@ -69,13 +69,12 @@ class CsvParquetConverter:
         source_dir = Path(source_dir)
         if not source_dir.is_dir():
             raise NotADirectoryError(f"Not a directory: {source_dir}")
-        
-        if output_dir is None:
-            output_dir = source_dir
-        else:
+
+        explicit_output = output_dir is not None
+        if explicit_output:
             output_dir = Path(output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
-        
+
         csv_files = list(source_dir.glob(pattern))
         if not csv_files:
             print(f"[WARN] No CSV files matching '{pattern}' in {source_dir}")
@@ -86,9 +85,14 @@ class CsvParquetConverter:
         converted = []
         for csv_file in csv_files:
             try:
-                relative = csv_file.relative_to(source_dir)
-                parquet_file = output_dir / relative.with_suffix('.parquet')
-                parquet_file.parent.mkdir(parents=True, exist_ok=True)
+                if explicit_output:
+                    # Preserve relative subdirectory structure under output_dir
+                    relative = csv_file.relative_to(source_dir)
+                    parquet_file = output_dir / relative.with_suffix('.parquet')
+                    parquet_file.parent.mkdir(parents=True, exist_ok=True)
+                else:
+                    # Write alongside the source CSV file
+                    parquet_file = csv_file.with_suffix('.parquet')
                 result = CsvParquetConverter.convert_file(csv_file, parquet_file, compression)
                 converted.append(result)
             except Exception as ex:
@@ -128,7 +132,7 @@ Examples:
     parser.add_argument('-o', '--output', help='Output Parquet file path')
     parser.add_argument('--input-dir', help='Input directory containing CSV files')
     parser.add_argument('--output-dir', help='Output directory for Parquet files')
-    parser.add_argument('--pattern', default='*.csv', help='Glob pattern for CSV files')
+    parser.add_argument('--pattern', default='**/*.csv', help='Glob pattern for CSV files (default: **/*.csv, recurses into subdirectories)')
     parser.add_argument('--compression', choices=['zstd', 'gzip', 'snappy', 'none'], 
                        default='zstd', help='Compression algorithm')
     parser.add_argument('-c', '--cli-path', help='CLI path (required if using --upload)')

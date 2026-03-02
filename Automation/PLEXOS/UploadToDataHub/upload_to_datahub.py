@@ -70,7 +70,9 @@ class DataHubUploader:
             responses = self.sdk.datahub.upload(
                 local_folder=str(local_path.parent),
                 remote_folder=datahub_path,
-                glob_patterns=[local_path.name]
+                glob_patterns=[local_path.name],
+                is_versioned=False,
+                print_message=False
             )
             
             if not isinstance(responses, list):
@@ -103,20 +105,21 @@ class DataHubUploader:
             if not local_dir.is_dir():
                 raise NotADirectoryError(f"Not a directory: {local_dir}")
 
-            print(f"[UPLOAD] {local_dir} → {datahub_path} (pattern: {pattern})")
+            # Count matching files before upload for accurate reporting
+            matched_files = [f for f in local_dir.rglob(pattern) if f.is_file()]
+            print(f"[UPLOAD] {local_dir} → {datahub_path} (pattern: {pattern}, {len(matched_files)} file(s) found)")
 
             responses = self.sdk.datahub.upload(
                 local_folder=str(local_dir),
                 remote_folder=datahub_path,
-                glob_patterns=[pattern]
+                glob_patterns=[pattern],
+                is_versioned=False,
+                print_message=False
             )
 
-            if not isinstance(responses, list):
-                responses = [responses]
-            results = SDKBase.get_response_data(responses)
-            count = len(results) if isinstance(results, list) else 1
-            print(f"[OK] Uploaded {count} file(s) to {datahub_path}")
-            return count
+            SDKBase.get_response_data(responses)
+            print(f"[OK] Uploaded {len(matched_files)} file(s) to {datahub_path}")
+            return len(matched_files)
 
         except Exception as ex:
             print(f"[FAIL] Failed to upload directory {local_dir}: {ex}")
