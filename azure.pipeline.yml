@@ -56,6 +56,7 @@ stages:
       displayName: 'Authenticate to Azure Artifacts'
       inputs:
         artifactFeeds: 'Cloud Platform/python'
+        onlyAddExtraIndex: true
 
     - script: |
         python -m pip install --upgrade pip
