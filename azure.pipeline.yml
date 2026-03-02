@@ -53,9 +53,8 @@ stages:
         addToPath: true
 
     - task: PipAuthenticate@1
-      displayName: 'Authenticate to Azure Artifacts'
       inputs:
-        artifactFeeds: 'Cloud Platform/python'
+        artifactFeeds: 'python'
         onlyAddExtraIndex: true
 
     - script: |
