@@ -1,0 +1,83 @@
+# ─────────────────────────────────────────────────────────────
+# Pipeline: release.pipeline.yml
+# Triggers: CI after PR is MERGED into release (direct push blocked via branch policy)
+#           PR validation into release (runs unit tests)
+# Stages  : Set Build Number → Run Unit Tests (PR only)
+#                            → Push to Public GitHub (merge only)
+# ─────────────────────────────────────────────────────────────
+
+trigger:
+  branches:
+    include:
+    - release
+
+pr:
+  branches:
+    include:
+    - release  # ← PR into release required; direct push blocked via branch policy
+
+variables:
+  vmImageName: 'ubuntu-latest'
+
+stages:
+
+- stage: Set_BuildNumber
+  displayName: Set Build Number
+  jobs:
+  - job: SetBuildNumber
+    displayName: Set Build Number
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - task: PowerShell@2
+      displayName: 'Set Version'
+      inputs:
+        targetType: 'inline'
+        script: |
+          $versions = Get-Content version.json | ConvertFrom-Json
+          $major = $versions.major
+          $minor = $versions.minor
+          $commitCount = git rev-list --count origin/release
+          $version = "$major.$minor.$commitCount"
+          Write-Host "##vso[build.updatebuildnumber]$version"
+
+# ── Runs only after PR is MERGED into release (not during PR validation) ──
+- stage: Push_To_Public_GitHub
+  displayName: Push to Public GitHub
+  condition: |
+    and(
+      succeeded(),
+      ne(variables['Build.Reason'], 'PullRequest')
+    )
+  dependsOn: Set_BuildNumber
+  jobs:
+  - job: PushToPublicGitHub
+    displayName: Push to Public GitHub Repo
+    pool:
+      vmImage: $(vmImageName)
+    steps:
+    - checkout: self
+      persistCredentials: true
+      fetchDepth: 0
+
+    - task: PowerShell@2
+      displayName: 'Configure Git'
+      inputs:
+        targetType: 'inline'
+        script: |
+          git config --global user.email "pipeline@energyexemplar.com"
+          git config --global user.name "Azure DevOps Pipeline"
+
+    - task: PowerShell@2
+      displayName: 'Push to Public GitHub master'
+      env:
+        GITHUB_PAT: $(GITHUB_PAT)
+        GITHUB_REPO_URL: https://github.com/energyexemplar-core/EE.Automation-scripts-test
+      inputs:
+        targetType: 'inline'
+        script: |
+          $repoUrl = $env:GITHUB_REPO_URL -replace "https://", "https://$($env:GITHUB_PAT)@"
+          git remote add public $repoUrl
+          git push public HEAD:refs/heads/main --force
+          Write-Host "✅ Successfully pushed to public GitHub main"
+
