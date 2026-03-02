@@ -112,20 +112,20 @@ stages:
       displayName: 'Fetch and Sync from Public GitHub'
       env:
         GITHUB_PAT: $(GITHUB_PAT)
-        GITHUB_REPO_URL: $(GITHUB_REPO_URL)
+        GITHUB_REPO_URL: https://github.com/energyexemplar-core/EE.Automation-scripts-test
       inputs:
         targetType: 'inline'
         script: |
           $repoUrl = $env:GITHUB_REPO_URL -replace "https://", "https://$($env:GITHUB_PAT)@"
           git remote add public $repoUrl
-          git fetch public master
+          git fetch public main
           
           # Check if there are new commits in public that aren't in origin
-          $localCommits = git rev-list origin/master..public/master | Measure-Object -Line
+          $localCommits = git rev-list origin/ab_addcicd..public/main | Measure-Object -Line
           
           if ($localCommits.Lines -gt 0) {
             Write-Host "Found $($localCommits.Lines) new commits in public GitHub"
-            git merge public/master --no-edit
+            git merge public/main --no-edit
             git push origin HEAD:refs/heads/ab_addcicd 
             Write-Host "✅ Successfully synced commits back to cloud platform"
           } else {
