@@ -47,9 +47,9 @@ stages:
       vmImage: $(vmImageName)
     steps:
     - task: UsePythonVersion@0
-      displayName: 'Use Python 3.x'
+      displayName: 'Use Python 3.12'
       inputs:
-        versionSpec: '3.x'
+        versionSpec: '3.12'
         addToPath: true
 
     - task: PipAuthenticate@1
