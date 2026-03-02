@@ -54,7 +54,7 @@ stages:
 
     - script: |
         python -m pip install --upgrade pip
-        pip install pytest pytest-azurepipelines pandas numpy pyarrow
+        pip install pytest pytest-azurepipelines pandas numpy pyarrow matplotlib seaborn openpyxl
       displayName: 'Install dependencies'
 
     - script: |
