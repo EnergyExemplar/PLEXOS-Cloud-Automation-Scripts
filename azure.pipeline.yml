@@ -52,9 +52,14 @@ stages:
         versionSpec: '3.x'
         addToPath: true
 
+    - task: PipAuthenticate@1
+      displayName: 'Authenticate to Azure Artifacts'
+      inputs:
+        artifactFeeds: 'Cloud Platform/python'
+
     - script: |
         python -m pip install --upgrade pip
-        pip install pytest pytest-azurepipelines pandas numpy pyarrow matplotlib seaborn openpyxl
+        pip install pytest pytest-azurepipelines pandas numpy pyarrow matplotlib seaborn openpyxl eecloud
       displayName: 'Install dependencies'
 
     - script: |
