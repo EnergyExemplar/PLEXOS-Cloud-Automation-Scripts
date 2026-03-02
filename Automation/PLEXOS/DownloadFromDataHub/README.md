@@ -29,12 +29,6 @@ Downloads one or more files from DataHub to a local directory. This is a standal
 | `-f, --file` | str | DataHub file path to download (repeat for multiple files) | `-f Project/Study/input.csv` |
 | `-o, --output-dir` | str | Local output directory | `-o ./downloads` |
 
-### Optional Arguments
-
-| Argument | Type | Default | Description |
-|----------|------|---------|-------------|
-| `--overwrite` | flag | True | Overwrite existing local files |
-
 ---
 
 ## Environment Variables Used
