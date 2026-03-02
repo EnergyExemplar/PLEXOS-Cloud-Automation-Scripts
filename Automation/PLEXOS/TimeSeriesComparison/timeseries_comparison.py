@@ -330,7 +330,6 @@ class TimeSeriesComparator:
     def parse_datetime_column(self, df: pd.DataFrame, col: str, file_label: str) -> Optional[pd.DataFrame]:
         """Parse datetime column with flexible format detection."""
         # [OPTIMIZATION] Only copy when necessary, not at start
-        df_is_copy = False
         
         try:
             # Try standard parsing first
