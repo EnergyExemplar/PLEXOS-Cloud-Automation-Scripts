@@ -18,6 +18,7 @@ pr:
 
 variables:
   vmImageName: 'ubuntu-latest'
+  publicRepoBranch: 'main'
 
 stages:
 
@@ -37,44 +38,9 @@ stages:
           $versions = Get-Content version.json | ConvertFrom-Json
           $major = $versions.major
           $minor = $versions.minor
-          $commitCount = git rev-list --count origin/master
+          $commitCount = git rev-list --count origin/ab_addcicd
           $version = "$major.$minor.$commitCount"
           Write-Host "##vso[build.updatebuildnumber]$version"
-
-# ── Runs only on PR into release ──
-# - stage: Run_Unit_Tests
-#   displayName: Run Unit Tests
-#   condition: eq(variables['Build.Reason'], 'PullRequest')
-#   dependsOn: Set_BuildNumber
-#   jobs:
-#   - job: UnitTests
-#     displayName: Run Unit Tests
-#     pool:
-#       vmImage: $(vmImageName)
-#     steps:
-#     - task: UsePythonVersion@0
-#       displayName: 'Use Python 3.x'
-#       inputs:
-#         versionSpec: '3.x'
-#         addToPath: true
-
-#     - script: |
-#         python -m pip install --upgrade pip
-#         pip install pytest pytest-azurepipelines
-#         if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-#       displayName: 'Install dependencies'
-
-#     - script: |
-#         pytest --junitxml=$(Build.ArtifactStagingDirectory)/test-results.xml -v
-#       displayName: 'Run pytest'
-
-#     - task: PublishTestResults@2
-#       displayName: 'Publish Test Results'
-#       condition: always()
-#       inputs:
-#         testResultsFormat: 'JUnit'
-#         testResultsFiles: '$(Build.ArtifactStagingDirectory)/test-results.xml'
-#         failTaskOnFailedTests: true
 
 # ── Runs only after PR is MERGED into release (not during PR validation) ──
 - stage: Push_To_Public_GitHub
@@ -113,17 +79,17 @@ stages:
         script: |
           $repoUrl = $env:GITHUB_REPO_URL -replace "https://", "https://$($env:GITHUB_PAT)@"
           git remote add public $repoUrl
-          git push public HEAD:refs/heads/master --force
-          Write-Host "✅ Successfully pushed to public GitHub master"
+          git push public HEAD:refs/heads/$(publicRepoBranch) --force
+          Write-Host "✅ Successfully pushed to public GitHub $(publicRepoBranch)"
 
 # ── Reverse sync: pull commits from public GitHub back to cloud platform ──
 - stage: Reverse_Sync_From_Public
   displayName: Reverse Sync from Public GitHub
-  condition: |
-    and(
-      succeeded(),
-      ne(variables['Build.Reason'], 'PullRequest')
-    )
+  # condition: |
+  #   and(
+  #     succeeded(),
+  #     ne(variables['Build.Reason'], 'PullRequest')
+  #   )
   dependsOn: Push_To_Public_GitHub
   jobs:
   - job: ReverseSyncFromPublic
@@ -141,7 +107,7 @@ stages:
         targetType: 'inline'
         script: |
           git config --global user.email "pipeline@energyexemplar.com"
-          git config --global user.name "Azure DevOps Pipeline"
+          git config --global user.name "Azure DevOps"
 
     - task: PowerShell@2
       displayName: 'Fetch and Sync from Public GitHub'
@@ -153,17 +119,24 @@ stages:
         script: |
           $repoUrl = $env:GITHUB_REPO_URL -replace "https://", "https://$($env:GITHUB_PAT)@"
           git remote add public $repoUrl
-          git fetch public master
+          git fetch public $(publicRepoBranch)
+
+          # Ensure we sync into internal master branch
+          git fetch origin master
+          git checkout -B master origin/master
+          git pull origin master
           
           # Check if there are new commits in public that aren't in origin
-          $localCommits = git rev-list origin/master..public/master | Measure-Object -Line
+          $localCommits = git rev-list origin/master..public/$(publicRepoBranch) | Measure-Object -Line
           
           if ($localCommits.Lines -gt 0) {
             Write-Host "Found $($localCommits.Lines) new commits in public GitHub"
-            git merge public/master --no-edit
-            git push origin HEAD:refs/heads/release
+            git merge public/$(publicRepoBranch) --no-edit
+            git push origin HEAD:refs/heads/master
             Write-Host "✅ Successfully synced commits back to cloud platform"
           } else {
             Write-Host "ℹ️  No new commits in public GitHub to sync"
           }
+
+
 

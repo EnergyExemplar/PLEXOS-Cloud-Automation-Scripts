@@ -52,6 +52,11 @@ stages:
         versionSpec: '3.x'
         addToPath: true
 
+    - task: PipAuthenticate@1
+      inputs:
+        artifactFeeds: 'python'
+        onlyAddExtraIndex: true
+
     - script: |
         python -m pip install --upgrade pip
         pip install pytest pytest-azurepipelines
