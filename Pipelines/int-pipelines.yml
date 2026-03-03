@@ -36,7 +36,6 @@ stages:
 # ── Runs on PR to master OR PR to release ──
 - stage: Run_Unit_Tests
   displayName: Run Unit Tests
-  condition: eq(variables['Build.Reason'], 'PullRequest')
   dependsOn: Set_BuildNumber
   jobs:
   - job: UnitTests
