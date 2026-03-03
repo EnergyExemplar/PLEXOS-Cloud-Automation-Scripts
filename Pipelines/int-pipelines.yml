@@ -2,13 +2,11 @@ trigger:
   branches:
     include:
     - master
-    - release
 
 pr:
   branches:
     include:
     - master
-    - release  # ← PR into release is required (direct push blocked via branch policy)
 
 variables:
   vmImageName: 'ubuntu-latest'
