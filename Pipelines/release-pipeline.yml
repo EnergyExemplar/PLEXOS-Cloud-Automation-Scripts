@@ -18,7 +18,6 @@ pr:
 
 variables:
   vmImageName: 'ubuntu-latest'
-  publicRepoBranch: 'main'
 
 stages:
 
@@ -74,6 +73,7 @@ stages:
       env:
         GITHUB_PAT: $(GITHUB_PAT)
         GITHUB_REPO_URL: $(GITHUB_REPO_URL)
+        publicRepoBranch:$(publicRepoBranch)
       inputs:
         targetType: 'inline'
         script: |
@@ -114,6 +114,7 @@ stages:
       env:
         GITHUB_PAT: $(GITHUB_PAT)
         GITHUB_REPO_URL: $(GITHUB_REPO_URL)
+        publicRepoBranch: $(publicRepoBranch)
       inputs:
         targetType: 'inline'
         script: |
