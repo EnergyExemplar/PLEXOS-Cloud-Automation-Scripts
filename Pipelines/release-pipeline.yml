@@ -92,13 +92,14 @@ stages:
       inputs:
         targetType: 'inline'
         script: |
-          $repoUrl = $env:GITHUB_REPO_URL -replace "https://", "https://$($env:GITHUB_PAT)@"
+          $repoUrl = $env:GITHUB_REPO_URL -replace "https://", "https://oauth2:$($env:GITHUB_PAT)@"
           git remote add public $repoUrl
 
           # Safety: do NOT overwrite public branch history.
           # Only push if public/<branch> is an ancestor of our current HEAD (fast-forward update).
           git fetch public $(publicRepoBranch)
-          git merge-base --is-ancestor public/$(publicRepoBranch) HEAD
+          # Use FETCH_HEAD — set by git after every fetch, no remote-tracking ref needed
+          git merge-base --is-ancestor FETCH_HEAD HEAD
           if ($LASTEXITCODE -ne 0) {
             Write-Host "##vso[task.logissue type=error]Refusing to push: public/$(publicRepoBranch) has commits not present in internal HEAD. Run reverse sync first."
             exit 1
@@ -143,7 +144,7 @@ stages:
       inputs:
         targetType: 'inline'
         script: |
-          $repoUrl = $env:GITHUB_REPO_URL -replace "https://", "https://$($env:GITHUB_PAT)@"
+          $repoUrl = $env:GITHUB_REPO_URL -replace "https://", "https://oauth2:$($env:GITHUB_PAT)@"
           git remote add public $repoUrl
           git fetch public $(publicRepoBranch)
           git fetch origin ab_addcicd release
