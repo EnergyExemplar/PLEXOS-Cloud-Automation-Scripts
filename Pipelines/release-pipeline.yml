@@ -175,3 +175,6 @@ stages:
             # git merge public/$(publicRepoBranch) --no-edit
             # git push origin HEAD:refs/heads/AB_release
             # Write-Host "✅ Synced into release"
+          } else {
+            Write-Host "ℹ️  No new commits in public GitHub to sync"
+          }
