@@ -51,7 +51,7 @@ stages:
           $versions = Get-Content version.json | ConvertFrom-Json
           $major = $versions.major
           $minor = $versions.minor
-          $commitCount = git rev-list --count origin/release
+          $commitCount = git rev-list --count origin/ab_addcicd
           $version = "$major.$minor.$commitCount"
           Write-Host "##vso[build.updatebuildnumber]$version"
 
