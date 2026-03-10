@@ -115,11 +115,11 @@ stages:
 # ── Runs when public repo has a new commit (ResourceTrigger) OR after a successful push stage ──
 - stage: Reverse_Sync_From_Public
   displayName: Reverse Sync from Public GitHub
-  condition: |
-    or(
-      eq(variables['Build.Reason'], 'ResourceTrigger'),
-      eq(dependencies.Push_To_Public_GitHub.result, 'Succeeded')
-    )
+  # condition: |
+  #   or(
+  #     eq(variables['Build.Reason'], 'ResourceTrigger'),
+  #     eq(dependencies.Push_To_Public_GitHub.result, 'Succeeded')
+  #   )
   dependsOn: Push_To_Public_GitHub
   jobs:
   - job: ReverseSyncFromPublic
