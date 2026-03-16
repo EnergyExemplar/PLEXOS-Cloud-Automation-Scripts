@@ -31,7 +31,6 @@ pr:
 
 variables:
   vmImageName: 'ubuntu-latest'
-  publicRepoBranch: 'main'
 
 stages:
 
@@ -51,7 +50,7 @@ stages:
           $versions = Get-Content version.json | ConvertFrom-Json
           $major = $versions.major
           $minor = $versions.minor
-          $commitCount = git rev-list --count origin/ab_addcicd
+          $commitCount = git rev-list --count origin/master
           $version = "$major.$minor.$commitCount"
           Write-Host "##vso[build.updatebuildnumber]$version"
 
@@ -75,29 +74,156 @@ stages:
       persistCredentials: true
       fetchDepth: 0
 
-    - task: PowerShell@2
+   # 1. Generate token (do this RIGHT BEFORE git operations)
+    - pwsh: |
+        if ($PSVersionTable.PSVersion.Major -lt 7) {
+          throw "PowerShell 7+ is required to import PEM private key. Current version: $($PSVersionTable.PSVersion)"
+        }
+
+        function ConvertTo-Base64Url([byte[]]$bytes) {
+          $b64 = [Convert]::ToBase64String($bytes)
+          $b64 = $b64.TrimEnd('=')
+          $b64 = $b64.Replace('+', '-').Replace('/', '_')
+          return $b64
+        }
+
+        $privateKeyPem = ($env:GITHUB_APP_PRIVATE_KEY ?? '').Trim()
+        
+        if ([string]::IsNullOrWhiteSpace($privateKeyPem)) {
+          throw 'GITHUB_APP_PRIVATE_KEY is empty.'
+        }
+        
+        # Handle multiple possible formats:
+        # 1. Literal \n strings -> convert to actual newlines
+        if ($privateKeyPem -match '\\n') {
+          Write-Host "Detected escaped newlines, converting..." -ForegroundColor DarkGray
+          $privateKeyPem = $privateKeyPem -replace '\\n', "`n"
+        }
+        # 2. If all on one line, reconstruct proper PEM format
+        elseif (-not ($privateKeyPem -match "`n")) {
+          Write-Host "Detected single-line key, reconstructing PEM format..." -ForegroundColor DarkGray
+          # Extract header, body, and footer
+          if ($privateKeyPem -match '^(-----BEGIN [^-]+ PRIVATE KEY-----)(.+?)(-----END [^-]+ PRIVATE KEY-----)$') {
+            $header = $matches[1]
+            $body = $matches[2]
+            $footer = $matches[3]
+            
+            # Split body into 64-char lines
+            $lines = @()
+            for ($i = 0; $i -lt $body.Length; $i += 64) {
+              $length = [Math]::Min(64, $body.Length - $i)
+              $lines += $body.Substring($i, $length)
+            }
+            
+            $privateKeyPem = "$header`n$($lines -join "`n")`n$footer"
+          } else {
+            Write-Host "##[warning]Cannot parse PEM format from single line"
+          }
+        }
+        
+        # Debug: Check if key starts with proper header
+        if (-not $privateKeyPem.StartsWith('-----BEGIN')) {
+          Write-Host "##[warning]Private key doesn't start with PEM header. First 50 chars: $($privateKeyPem.Substring(0, [Math]::Min(50, $privateKeyPem.Length)))"
+        } else {
+          Write-Host "PEM key format validated" -ForegroundColor Green
+        }
+
+        $appId = ($env:GITHUB_APP_ID ?? '').Trim()
+        if ([string]::IsNullOrWhiteSpace($appId)) {
+          throw 'GITHUB_APP_ID is empty.'
+        }
+
+        $installationId = ($env:GITHUB_APP_INSTALLATION_ID ?? '').Trim()
+        if ([string]::IsNullOrWhiteSpace($installationId)) {
+          throw 'GITHUB_APP_INSTALLATION_ID is empty.'
+        }
+
+        $now = [DateTimeOffset]::UtcNow
+        $iat = [int]$now.ToUnixTimeSeconds()
+        $exp = [int]$now.AddMinutes(10).ToUnixTimeSeconds()
+
+        $headerJson = '{"alg":"RS256","typ":"JWT"}'
+        $payloadJson = "{`"iat`":$iat,`"exp`":$exp,`"iss`":`"$appId`"}"
+
+        $header = ConvertTo-Base64Url ([Text.Encoding]::UTF8.GetBytes($headerJson))
+        $payload = ConvertTo-Base64Url ([Text.Encoding]::UTF8.GetBytes($payloadJson))
+        $unsignedToken = "$header.$payload"
+
+        $rsa = [System.Security.Cryptography.RSA]::Create()
+        
+        try {
+          $rsa.ImportFromPem($privateKeyPem)
+        } catch {
+          Write-Host "##[error]Failed to import PEM key. Error: $_"
+          Write-Host "##[debug]Key length: $($privateKeyPem.Length)"
+          Write-Host "##[debug]Key preview: $($privateKeyPem.Substring(0, [Math]::Min(100, $privateKeyPem.Length)))"
+          throw
+        }
+        $signatureBytes = $rsa.SignData(
+          [Text.Encoding]::UTF8.GetBytes($unsignedToken),
+          [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+          [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
+        )
+        $signature = ConvertTo-Base64Url $signatureBytes
+        $jwtToken = "$unsignedToken.$signature"
+
+        $headers = @{
+          Authorization = "Bearer $jwtToken"
+          Accept        = 'application/vnd.github+json'
+        }
+        $uri = "https://api.github.com/app/installations/$installationId/access_tokens"
+
+        $response = Invoke-RestMethod -Method Post -Uri $uri -Headers $headers
+        if (-not $response -or [string]::IsNullOrWhiteSpace($response.token)) {
+          throw 'GitHub installation token response did not include token.'
+        }
+
+        Write-Host "##vso[task.setvariable variable=GITHUB_TOKEN;issecret=true]$($response.token)"
+        Write-Host 'Token generated successfully'
+      displayName: 'Generate GitHub App Token'
+      env:
+        GITHUB_APP_PRIVATE_KEY: $(GITHUB_APP_PRIVATE_KEY)
+        GITHUB_APP_ID: $(GITHUB_APP_ID)
+        GITHUB_APP_INSTALLATION_ID: $(GITHUB_APP_INSTALLATION_ID)
+
+    # 2. Clear any cached credentials
+    - pwsh: |
+        git config --global --unset credential.helper 2>$null
+        git credential-cache exit 2>$null
+      displayName: 'Clear Git Credentials'
+
+    # 3. Configure git with token
+    - pwsh: |
+        git config --global user.name "azure-bot[bot]"
+        git config --global user.email "azure-bot[bot]@users.noreply.github.com"
+        git config --global url."https://x-access-token:$env:GITHUB_TOKEN@github.com/".insteadOf "https://github.com/"
       displayName: 'Configure Git'
-      inputs:
-        targetType: 'inline'
-        script: |
-          git config --global user.email "pipeline@energyexemplar.com"
-          git config --global user.name "Azure DevOps Pipeline"
+      env:
+        GITHUB_TOKEN: $(GITHUB_TOKEN)
+
+    # 4. Now your git operations
+    - pwsh: |
+        git remote -v
+        git fetch origin
+        git status
+      displayName: 'Git Operations'
+      env:
+        GITHUB_TOKEN: $(GITHUB_TOKEN)
 
     - task: PowerShell@2
       displayName: 'Push to Public GitHub master'
       env:
-        GITHUB_PAT: $(GITHUB_PAT)
         GITHUB_REPO_URL: $(GITHUB_REPO_URL)
-        publicRepoBranch: $(publicRepoBranch)
+        GITHUB_TOKEN: $(GITHUB_TOKEN)
       inputs:
         targetType: 'inline'
         script: |
-          $repoUrl = $env:GITHUB_REPO_URL -replace "https://", "https://x-access-token:$($env:GITHUB_PAT)@"
+          $repoUrl = $env:GITHUB_REPO_URL -replace "https://", "https://x-access-token:$($env:GITHUB_TOKEN)@"
           git remote add public $repoUrl
 
           # Safety: do NOT overwrite public branch history.
           # Only push if public/<branch> is an ancestor of our current HEAD (fast-forward update).
-          git fetch public $(publicRepoBranch)
+          git fetch public master
           if ($LASTEXITCODE -ne 0) {
             Write-Host "##vso[task.logissue type=error]Failed to fetch from public GitHub. Check GITHUB_PAT and GITHUB_REPO_URL."
             exit 1
@@ -105,12 +231,12 @@ stages:
           # Use FETCH_HEAD — set by git after every fetch, no remote-tracking ref needed
           git merge-base --is-ancestor FETCH_HEAD HEAD
           if ($LASTEXITCODE -ne 0) {
-            Write-Host "##vso[task.logissue type=error]Refusing to push: public/$(publicRepoBranch) has commits not present in internal HEAD. Run reverse sync first."
+            Write-Host "##vso[task.logissue type=error]Refusing to push: public/master has commits not present in internal HEAD. Run reverse sync first."
             exit 1
           }
 
-          git push public HEAD:refs/heads/$(publicRepoBranch)
-          Write-Host "✅ Successfully pushed to public GitHub $(publicRepoBranch)"
+          git push public HEAD:refs/heads/master
+          Write-Host "✅ Successfully pushed to public GitHub master"
 
 # ── Runs ONLY when triggered by a new commit on the public GitHub repo ──
 - stage: Reverse_Sync_From_Public
@@ -144,44 +270,43 @@ stages:
       env:
         GITHUB_PAT: $(GITHUB_PAT)
         GITHUB_REPO_URL: $(GITHUB_REPO_URL)
-        publicRepoBranch: $(publicRepoBranch)
       inputs:
         targetType: 'inline'
         script: |
           $repoUrl = $env:GITHUB_REPO_URL -replace "https://", "https://x-access-token:$($env:GITHUB_PAT)@"
           git remote add public $repoUrl
-          git fetch public $(publicRepoBranch)
+          git fetch public master
           if ($LASTEXITCODE -ne 0) {
             Write-Host "##vso[task.logissue type=error]Failed to fetch from public GitHub. Check GITHUB_PAT and GITHUB_REPO_URL."
             exit 1
           }
-          git fetch origin ab_addcicd release
+          git fetch origin master release
 
-          # Check if there are new commits in public that aren't in internal ab_addcicd
-          $newCommits = git rev-list origin/ab_addcicd..public/$(publicRepoBranch) | Measure-Object -Line
+          # Check if there are new commits in public that aren't in internal master
+          $newCommits = git rev-list origin/master..public/master | Measure-Object -Line
 
           if ($newCommits.Lines -gt 0) {
-            Write-Host "Found $($newCommits.Lines) new commits in public GitHub — syncing into ab_addcicd and release"
+            Write-Host "Found $($newCommits.Lines) new commits in public GitHub — syncing into master and release"
 
-            # ── Merge into ab_addcicd ──
-            git checkout -B ab_addcicd origin/ab_addcicd
-            git merge public/$(publicRepoBranch) --no-edit
+            # ── Merge into master ──
+            git checkout -B master origin/master
+            git merge public/master --no-edit
 
             # Exclude Public-license.md: restore internal version after merge
             if (Test-Path "Public-license.md") {
-              git checkout origin/ab_addcicd -- Public-license.md
+              git checkout origin/master -- Public-license.md
               git commit --amend --no-edit
               Write-Host "ℹ️  Restored internal Public-license.md (excluded from reverse sync)"
             }
 
-            git push origin HEAD:refs/heads/ab_addcicd
-            Write-Host "✅ Synced into ab_addcicd"
+            git push origin HEAD:refs/heads/master
+            Write-Host "✅ Synced into master"
 
             # ── Merge into release ──
             # (commented out)
             # git checkout -B release origin/release
             # git merge public/$(publicRepoBranch) --no-edit
-            # git push origin HEAD:refs/heads/AB_release
+            # git push origin HEAD:refs/heads/release
             # Write-Host "✅ Synced into release"
           } else {
             Write-Host "ℹ️  No new commits in public GitHub to sync"
