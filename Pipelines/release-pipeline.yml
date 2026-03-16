@@ -50,7 +50,7 @@ stages:
           $versions = Get-Content version.json | ConvertFrom-Json
           $major = $versions.major
           $minor = $versions.minor
-          $commitCount = git rev-list --count origin/master
+          $commitCount = git rev-list --count origin/ab_addcicd
           $version = "$major.$minor.$commitCount"
           Write-Host "##vso[build.updatebuildnumber]$version"
 
@@ -223,20 +223,20 @@ stages:
 
           # Safety: do NOT overwrite public branch history.
           # Only push if public/<branch> is an ancestor of our current HEAD (fast-forward update).
-          git fetch public master
+          git fetch public TestSync
           if ($LASTEXITCODE -ne 0) {
-            Write-Host "##vso[task.logissue type=error]Failed to fetch from public GitHub. Check GITHUB_PAT and GITHUB_REPO_URL."
+            Write-Host "##vso[task.logissue type=error]Failed to fetch from public GitHub. Check GITHUB_REPO_URL."
             exit 1
           }
           # Use FETCH_HEAD — set by git after every fetch, no remote-tracking ref needed
           git merge-base --is-ancestor FETCH_HEAD HEAD
           if ($LASTEXITCODE -ne 0) {
-            Write-Host "##vso[task.logissue type=error]Refusing to push: public/master has commits not present in internal HEAD. Run reverse sync first."
+            Write-Host "##vso[task.logissue type=error]Refusing to push: public/TestSync has commits not present in internal HEAD. Run reverse sync first."
             exit 1
           }
 
-          git push public HEAD:refs/heads/master
-          Write-Host "✅ Successfully pushed to public GitHub master"
+          git push public HEAD:refs/heads/TestSync
+          Write-Host "✅ Successfully pushed to public GitHub TestSync"
 
 # ── Runs ONLY when triggered by a new commit on the public GitHub repo ──
 - stage: Reverse_Sync_From_Public
@@ -275,7 +275,7 @@ stages:
         script: |
           $repoUrl = $env:GITHUB_REPO_URL -replace "https://", "https://x-access-token:$($env:GITHUB_PAT)@"
           git remote add public $repoUrl
-          git fetch public master
+          git fetch public TestSync
           if ($LASTEXITCODE -ne 0) {
             Write-Host "##vso[task.logissue type=error]Failed to fetch from public GitHub. Check GITHUB_PAT and GITHUB_REPO_URL."
             exit 1
@@ -283,14 +283,14 @@ stages:
           git fetch origin master release
 
           # Check if there are new commits in public that aren't in internal master
-          $newCommits = git rev-list origin/master..public/master | Measure-Object -Line
+          $newCommits = git rev-list origin/master..public/TestSync | Measure-Object -Line
 
           if ($newCommits.Lines -gt 0) {
             Write-Host "Found $($newCommits.Lines) new commits in public GitHub — syncing into master and release"
 
             # ── Merge into master ──
             git checkout -B master origin/master
-            git merge public/master --no-edit
+            git merge public/TestSync --no-edit
 
             # Exclude Public-license.md: restore internal version after merge
             if (Test-Path "Public-license.md") {
@@ -300,7 +300,7 @@ stages:
             }
 
             git push origin HEAD:refs/heads/master
-            Write-Host "✅ Synced into master"
+            Write-Host "✅ Synced public/TestSync into internal master"
 
             # ── Merge into release ──
             # (commented out)
