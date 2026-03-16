@@ -8,16 +8,16 @@
 # ─────────────────────────────────────────────────────────────
 
 # ── Trigger on new commits pushed directly to the public GitHub repo ──
-resources:
-  repositories:
-  - repository: publicGitHub
-    type: github
-    endpoint: Plexos-internal-connection  # ← name of your GitHub service connection in Azure DevOps
-    name: energyexemplar-core/EE.Automation-scripts-test
-    trigger:
-      branches:
-        include:
-        - main
+# resources:
+#   repositories:
+#   - repository: publicGitHub
+#     type: github
+#     endpoint: Plexos-internal-connection  # ← name of your GitHub service connection in Azure DevOps
+#     name: energyexemplar-core/EE.Automation-scripts-test
+#     trigger:
+#       branches:
+#         include:
+#         - main
 
 trigger:
   branches:
@@ -213,12 +213,11 @@ stages:
     - task: PowerShell@2
       displayName: 'Push to Public GitHub master'
       env:
-        GITHUB_REPO_URL: $(GITHUB_REPO_URL)
         GITHUB_TOKEN: $(GITHUB_TOKEN)
       inputs:
         targetType: 'inline'
         script: |
-          $repoUrl = $env:GITHUB_REPO_URL -replace "https://", "https://x-access-token:$($env:GITHUB_TOKEN)@"
+          $repoUrl = "https://x-access-token:$($env:GITHUB_TOKEN)@github.com/EnergyExemplar/PLEXOS-Cloud-Automation-Scripts"          
           git remote add public $repoUrl
 
           # Safety: do NOT overwrite public branch history.
@@ -340,7 +339,7 @@ stages:
       inputs:
         targetType: 'inline'
         script: |
-          $repoUrl = "https://x-access-token:$($env:GITHUB_TOKEN)@$($env:GITHUB_REPO_URL)"
+          $repoUrl = "https://x-access-token:$($env:GITHUB_TOKEN)@github.com/EnergyExemplar/PLEXOS-Cloud-Automation-Scripts"
           git remote add public $repoUrl
           git fetch public TestSync
           if ($LASTEXITCODE -ne 0) {
