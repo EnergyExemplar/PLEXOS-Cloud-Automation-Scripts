@@ -241,11 +241,11 @@ stages:
 # ── Runs ONLY when triggered by a new commit on the public GitHub repo ──
 - stage: Reverse_Sync_From_Public
   displayName: Reverse Sync from Public GitHub
-  condition: |
-    and(
-      succeeded(),
-      eq(variables['Build.Reason'], 'ResourceTrigger')
-    )
+  # condition: |
+  #   and(
+  #     succeeded(),
+  #     eq(variables['Build.Reason'], 'ResourceTrigger')
+  #   )
   dependsOn: Set_BuildNumber
   jobs:
   - job: ReverseSyncFromPublic
