@@ -257,23 +257,90 @@ stages:
       persistCredentials: true
       fetchDepth: 0
 
-    - task: PowerShell@2
+    - pwsh: |
+        if ($PSVersionTable.PSVersion.Major -lt 7) {
+          throw "PowerShell 7+ is required to import PEM private key. Current version: $($PSVersionTable.PSVersion)"
+        }
+
+        function ConvertTo-Base64Url([byte[]]$bytes) {
+          $b64 = [Convert]::ToBase64String($bytes)
+          $b64 = $b64.TrimEnd('=')
+          $b64 = $b64.Replace('+', '-').Replace('/', '_')
+          return $b64
+        }
+
+        $privateKeyPem = ($env:GITHUB_APP_PRIVATE_KEY ?? '').Trim()
+        if ([string]::IsNullOrWhiteSpace($privateKeyPem)) { throw 'GITHUB_APP_PRIVATE_KEY is empty.' }
+
+        if ($privateKeyPem -match '\\n') {
+          $privateKeyPem = $privateKeyPem -replace '\\n', "`n"
+        } elseif (-not ($privateKeyPem -match "`n")) {
+          if ($privateKeyPem -match '^(-----BEGIN [^-]+ PRIVATE KEY-----)(.+?)(-----END [^-]+ PRIVATE KEY-----)$') {
+            $header = $matches[1]; $body = $matches[2]; $footer = $matches[3]
+            $lines = @()
+            for ($i = 0; $i -lt $body.Length; $i += 64) { $lines += $body.Substring($i, [Math]::Min(64, $body.Length - $i)) }
+            $privateKeyPem = "$header`n$($lines -join "`n")`n$footer"
+          }
+        }
+
+        $appId = ($env:GITHUB_APP_ID ?? '').Trim()
+        if ([string]::IsNullOrWhiteSpace($appId)) { throw 'GITHUB_APP_ID is empty.' }
+
+        $installationId = ($env:GITHUB_APP_INSTALLATION_ID ?? '').Trim()
+        if ([string]::IsNullOrWhiteSpace($installationId)) { throw 'GITHUB_APP_INSTALLATION_ID is empty.' }
+
+        $now = [DateTimeOffset]::UtcNow
+        $iat = [int]$now.ToUnixTimeSeconds()
+        $exp = [int]$now.AddMinutes(10).ToUnixTimeSeconds()
+
+        $headerJson  = '{"alg":"RS256","typ":"JWT"}'
+        $payloadJson = "{`"iat`":$iat,`"exp`":$exp,`"iss`":`"$appId`"}"
+
+        $h = ConvertTo-Base64Url ([Text.Encoding]::UTF8.GetBytes($headerJson))
+        $p = ConvertTo-Base64Url ([Text.Encoding]::UTF8.GetBytes($payloadJson))
+        $unsigned = "$h.$p"
+
+        $rsa = [System.Security.Cryptography.RSA]::Create()
+        $rsa.ImportFromPem($privateKeyPem)
+        $sig = ConvertTo-Base64Url ($rsa.SignData(
+          [Text.Encoding]::UTF8.GetBytes($unsigned),
+          [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+          [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
+        ))
+        $jwt = "$unsigned.$sig"
+
+        $response = Invoke-RestMethod -Method Post `
+          -Uri "https://api.github.com/app/installations/$installationId/access_tokens" `
+          -Headers @{ Authorization = "Bearer $jwt"; Accept = 'application/vnd.github+json' }
+
+        if (-not $response -or [string]::IsNullOrWhiteSpace($response.token)) {
+          throw 'GitHub installation token response did not include token.'
+        }
+
+        Write-Host "##vso[task.setvariable variable=GITHUB_TOKEN;issecret=true]$($response.token)"
+        Write-Host 'Token generated successfully'
+      displayName: 'Generate GitHub App Token'
+      env:
+        GITHUB_APP_PRIVATE_KEY: $(GITHUB_APP_PRIVATE_KEY)
+        GITHUB_APP_ID: $(GITHUB_APP_ID)
+        GITHUB_APP_INSTALLATION_ID: $(GITHUB_APP_INSTALLATION_ID)
+
+    - pwsh: |
+        git config --global user.email "pipeline@energyexemplar.com"
+        git config --global user.name "Azure DevOps"
+        git config --global url."https://x-access-token:$env:GITHUB_TOKEN@github.com/".insteadOf "https://github.com/"
       displayName: 'Configure Git'
-      inputs:
-        targetType: 'inline'
-        script: |
-          git config --global user.email "pipeline@energyexemplar.com"
-          git config --global user.name "Azure DevOps"
+      env:
+        GITHUB_TOKEN: $(GITHUB_TOKEN)
 
     - task: PowerShell@2
       displayName: 'Fetch and Sync from Public GitHub'
       env:
-        GITHUB_PAT: $(GITHUB_PAT)
-        GITHUB_REPO_URL: $(GITHUB_REPO_URL)
+        GITHUB_TOKEN: $(GITHUB_TOKEN)
       inputs:
         targetType: 'inline'
         script: |
-          $repoUrl = $env:GITHUB_REPO_URL -replace "https://", "https://x-access-token:$($env:GITHUB_PAT)@"
+          $repoUrl = "https://x-access-token:$($env:GITHUB_TOKEN)@github.com/energyexemplar-core/EE.Automation-scripts-test"
           git remote add public $repoUrl
           git fetch public TestSync
           if ($LASTEXITCODE -ne 0) {
