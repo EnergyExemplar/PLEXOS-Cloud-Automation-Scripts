@@ -280,27 +280,27 @@ stages:
             Write-Host "##vso[task.logissue type=error]Failed to fetch from public GitHub. Check GITHUB_PAT and GITHUB_REPO_URL."
             exit 1
           }
-          git fetch origin master release
+          git fetch origin ab_addcicd release
 
-          # Check if there are new commits in public that aren't in internal master
-          $newCommits = git rev-list origin/master..public/TestSync | Measure-Object -Line
+          # Check if there are new commits in public that aren't in internal ab_addcicd
+          $newCommits = git rev-list origin/ab_addcicd..public/TestSync | Measure-Object -Line
 
           if ($newCommits.Lines -gt 0) {
-            Write-Host "Found $($newCommits.Lines) new commits in public GitHub — syncing into master and release"
+            Write-Host "Found $($newCommits.Lines) new commits in public GitHub — syncing into ab_addcicd and release"
 
-            # ── Merge into master ──
-            git checkout -B master origin/master
+            # ── Merge into ab_addcicd ──
+            git checkout -B ab_addcicd origin/ab_addcicd
             git merge public/TestSync --no-edit
 
             # Exclude Public-license.md: restore internal version after merge
             if (Test-Path "Public-license.md") {
-              git checkout origin/master -- Public-license.md
+              git checkout origin/ab_addcicd -- Public-license.md
               git commit --amend --no-edit
               Write-Host "ℹ️  Restored internal Public-license.md (excluded from reverse sync)"
             }
 
-            git push origin HEAD:refs/heads/master
-            Write-Host "✅ Synced public/TestSync into internal master"
+            git push origin HEAD:refs/heads/ab_addcicd
+            Write-Host "✅ Synced public/TestSync into internal ab_addcicd"
 
             # ── Merge into release ──
             # (commented out)
