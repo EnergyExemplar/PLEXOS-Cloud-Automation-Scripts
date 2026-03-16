@@ -340,7 +340,7 @@ stages:
       inputs:
         targetType: 'inline'
         script: |
-          $repoUrl = "https://x-access-token:$($env:GITHUB_TOKEN)@github.com/energyexemplar-core/EE.Automation-scripts-test"
+          $repoUrl = "https://x-access-token:$($env:GITHUB_TOKEN)@https://github.com/EnergyExemplar/PLEXOS-Cloud-Automation-Scripts"
           git remote add public $repoUrl
           git fetch public TestSync
           if ($LASTEXITCODE -ne 0) {
