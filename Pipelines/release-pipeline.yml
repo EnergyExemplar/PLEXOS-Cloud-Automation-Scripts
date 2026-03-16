@@ -213,11 +213,12 @@ stages:
     - task: PowerShell@2
       displayName: 'Push to Public GitHub master'
       env:
+        GITHUB_REPO_URL: $(GITHUB_REPO_URL)
         GITHUB_TOKEN: $(GITHUB_TOKEN)
       inputs:
         targetType: 'inline'
         script: |
-          $repoUrl = "https://x-access-token:$($env:GITHUB_TOKEN)@github.com/energyexemplar-core/EE.Automation-scripts-test"
+          $repoUrl = $env:GITHUB_REPO_URL -replace "https://", "https://x-access-token:$($env:GITHUB_TOKEN)@"
           git remote add public $repoUrl
 
           # Safety: do NOT overwrite public branch history.
@@ -339,7 +340,7 @@ stages:
       inputs:
         targetType: 'inline'
         script: |
-          $repoUrl = "https://x-access-token:$($env:GITHUB_TOKEN)@github.com/energyexemplar-core/EE.Automation-scripts-test"
+          $repoUrl = "https://x-access-token:$($env:GITHUB_TOKEN)@$($env:GITHUB_REPO_URL)"
           git remote add public $repoUrl
           git fetch public TestSync
           if ($LASTEXITCODE -ne 0) {
