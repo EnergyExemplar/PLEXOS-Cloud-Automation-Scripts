@@ -1,0 +1,19 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/.venv/Lib/site-packages
+/.vs
+/Automation/PLEXOS/CsvToParquet/__pycache__
+/Automation/PLEXOS/UploadToDataHub/__pycache__
+/Automation/PLEXOS/DownloadFromDataHub/__pycache__
+/Automation/PLEXOS/ParquetToCsv/__pycache__
+/Automation/PLEXOS/TimeSeriesComparison/__pycache__
+/Post/PLEXOS/CleanupFiles/__pycache__
+/tests/__pycache__
+/Post/PLEXOS/CsvToParquet/__pycache__
+/Post/PLEXOS/TimeSeriesComparison/__pycache__
+/Post/PLEXOS/UploadToDataHub/__pycache__
+/Pre/PLEXOS/DownloadFromDataHub/__pycache__
+/Pre/PLEXOS/ParquetToCsv/__pycache__/convert_parquet_to_csv.cpython-313.pyc
+*.pyc
