@@ -69,10 +69,11 @@ stages:
           return $b64
         }
 
-        $privateKeyPem = ($env:GITHUB_APP_PRIVATE_KEY ?? '').Trim()
+        # GitHub App for PUBLIC repo (EnergyExemplar/PLEXOS-Cloud-Automation-Scripts)
+        $privateKeyPem = ($env:GITHUB_PUBLIC_APP_PRIVATE_KEY ?? '').Trim()
         
         if ([string]::IsNullOrWhiteSpace($privateKeyPem)) {
-          throw 'GITHUB_APP_PRIVATE_KEY is empty.'
+          throw 'GITHUB_PUBLIC_APP_PRIVATE_KEY is empty.'
         }
         
         # Handle multiple possible formats:
@@ -110,14 +111,14 @@ stages:
           Write-Host "PEM key format validated" -ForegroundColor Green
         }
 
-        $appId = ($env:GITHUB_APP_ID ?? '').Trim()
+        $appId = ($env:GITHUB_PUBLIC_APP_ID ?? '').Trim()
         if ([string]::IsNullOrWhiteSpace($appId)) {
-          throw 'GITHUB_APP_ID is empty.'
+          throw 'GITHUB_PUBLIC_APP_ID is empty.'
         }
 
-        $installationId = ($env:GITHUB_APP_INSTALLATION_ID ?? '').Trim()
+        $installationId = ($env:GITHUB_PUBLIC_APP_INSTALLATION_ID ?? '').Trim()
         if ([string]::IsNullOrWhiteSpace($installationId)) {
-          throw 'GITHUB_APP_INSTALLATION_ID is empty.'
+          throw 'GITHUB_PUBLIC_APP_INSTALLATION_ID is empty.'
         }
 
         $now = [DateTimeOffset]::UtcNow
@@ -162,11 +163,11 @@ stages:
 
         Write-Host "##vso[task.setvariable variable=GITHUB_TOKEN;issecret=true]$($response.token)"
         Write-Host 'Token generated successfully'
-      displayName: 'Generate GitHub App Token'
+      displayName: 'Generate GitHub App Token (Public Repo)'
       env:
-        GITHUB_APP_PRIVATE_KEY: $(GITHUB_APP_PRIVATE_KEY)
-        GITHUB_APP_ID: $(GITHUB_APP_ID)
-        GITHUB_APP_INSTALLATION_ID: $(GITHUB_APP_INSTALLATION_ID)
+        GITHUB_PUBLIC_APP_PRIVATE_KEY: $(GITHUB_PUBLIC_APP_PRIVATE_KEY)
+        GITHUB_PUBLIC_APP_ID: $(GITHUB_PUBLIC_APP_ID)
+        GITHUB_PUBLIC_APP_INSTALLATION_ID: $(GITHUB_PUBLIC_APP_INSTALLATION_ID)
 
     # 2. Clear any cached credentials
     - pwsh: |
@@ -202,6 +203,11 @@ stages:
           $repoUrl = "https://x-access-token:$($env:GITHUB_TOKEN)@github.com/EnergyExemplar/PLEXOS-Cloud-Automation-Scripts"          
           git remote add public $repoUrl
 
+          # Ensure we are on the LATEST origin/release (reverse sync may have added commits after this pipeline was triggered)
+          git fetch origin release
+          git reset --hard origin/release
+          Write-Host "[OK] Reset to latest origin/release: $(git rev-parse HEAD)"
+
           # Safety: do NOT overwrite public branch history.
           # Only push if public/<branch> is an ancestor of our current HEAD (fast-forward update).
           git fetch public master
@@ -216,8 +222,26 @@ stages:
             exit 1
           }
 
-          git push public HEAD:refs/heads/master
-          Write-Host "✅ Successfully pushed to public GitHub master"
+          # Check if there are actually any changes to publish
+          git diff --quiet FETCH_HEAD HEAD
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "ℹ️  No changes between internal release and public/master — nothing to push."
+            exit 0
+          }
+
+          # Build a single squash commit directly on top of public/master (no temp branch needed).
+          # git commit-tree takes the full tree of internal HEAD and parents it to FETCH_HEAD,
+          # producing one commit that contains all changes as a single delta.
+          $version = $env:BUILD_BUILDNUMBER
+          $tree = git rev-parse "HEAD^{tree}"
+          $squashCommit = git commit-tree $tree -p FETCH_HEAD -m "Published scripts / Enhancements for public repo"
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "##vso[task.logissue type=error]Failed to create squash commit."
+            exit 1
+          }
+
+          git push public "${squashCommit}:refs/heads/master"
+          Write-Host "✅ Successfully squash-merged and pushed to public GitHub master (commit $squashCommit)"
 
 # ── Runs on scheduled trigger or manual trigger ──
 - stage: Reverse_Sync_From_Public
@@ -235,7 +259,7 @@ stages:
       vmImage: $(vmImageName)
     steps:
     - checkout: self
-      persistCredentials: true
+      persistCredentials: false
       fetchDepth: 0
 
     - pwsh: |
@@ -250,25 +274,44 @@ stages:
           return $b64
         }
 
-        $privateKeyPem = ($env:GITHUB_APP_PRIVATE_KEY_INT ?? '').Trim()
-        if ([string]::IsNullOrWhiteSpace($privateKeyPem)) { throw 'GITHUB_APP_PRIVATE_KEY_INT is empty.' }
+        # GitHub App for INTERNAL repo (energyexemplar-cloudplatform/PLEXOS-Cloud-Automation-Scripts-internal)
+        $privateKeyPem = ($env:GITHUB_INTERNAL_APP_PRIVATE_KEY ?? '').Trim()
+        if ([string]::IsNullOrWhiteSpace($privateKeyPem)) { throw 'GITHUB_INTERNAL_APP_PRIVATE_KEY is empty.' }
 
+        Write-Host "[DEBUG] Raw key length: $($privateKeyPem.Length)"
+        Write-Host "[DEBUG] Inspecting private key content for newline normalization (no key material logged)"
+        Write-Host "[DEBUG] Contains literal \n: $($privateKeyPem -match '\\n')"
+        Write-Host "[DEBUG] Contains actual newline: $($privateKeyPem -match "`n")"
+
+        # Step 1: Replace literal \n escape sequences with real newlines
         if ($privateKeyPem -match '\\n') {
+          Write-Host "[DEBUG] Replacing literal \\n with real newlines"
           $privateKeyPem = $privateKeyPem -replace '\\n', "`n"
-        } elseif (-not ($privateKeyPem -match "`n")) {
-          if ($privateKeyPem -match '^(-----BEGIN [^-]+ PRIVATE KEY-----)(.+?)(-----END [^-]+ PRIVATE KEY-----)$') {
-            $header = $matches[1]; $body = $matches[2]; $footer = $matches[3]
+        }
+
+        # Step 2: If still no newlines, strip spaces and reconstruct proper PEM
+        if (-not ($privateKeyPem -match "`n")) {
+          Write-Host "[DEBUG] No newlines found — reconstructing PEM from single-line string"
+          # Remove all whitespace between header and footer, then reformat
+          if ($privateKeyPem -match '(-----BEGIN [^-]+ PRIVATE KEY-----)(.+?)(-----END [^-]+ PRIVATE KEY-----)') {
+            $header = $matches[1].Trim()
+            $body   = ($matches[2] -replace '\s', '')   # strip ALL whitespace from body
+            $footer = $matches[3].Trim()
+            Write-Host "[DEBUG] Extracted PEM header/footer and normalized body spacing (no key material logged)"
+            Write-Host "[DEBUG] Body length (stripped): $($body.Length)"
             $lines = @()
             for ($i = 0; $i -lt $body.Length; $i += 64) { $lines += $body.Substring($i, [Math]::Min(64, $body.Length - $i)) }
             $privateKeyPem = "$header`n$($lines -join "`n")`n$footer"
+          } else {
+            Write-Host "##[warning]Could not parse PEM structure — key may be malformed"
           }
         }
 
-        $appId = ($env:GITHUB_APP_ID_INT ?? '').Trim()
-        if ([string]::IsNullOrWhiteSpace($appId)) { throw 'GITHUB_APP_ID_INT is empty.' }
+        $appId = ($env:GITHUB_INTERNAL_APP_ID ?? '').Trim()
+        if ([string]::IsNullOrWhiteSpace($appId)) { throw 'GITHUB_INTERNAL_APP_ID is empty.' }
 
-        $installationId = ($env:GITHUB_APP_INSTALLATION_ID_INT ?? '').Trim()
-        if ([string]::IsNullOrWhiteSpace($installationId)) { throw 'GITHUB_APP_INSTALLATION_ID_INT is empty.' }
+        $installationId = ($env:GITHUB_INTERNAL_APP_INSTALLATION_ID ?? '').Trim()
+        if ([string]::IsNullOrWhiteSpace($installationId)) { throw 'GITHUB_INTERNAL_APP_INSTALLATION_ID is empty.' }
 
         $now = [DateTimeOffset]::UtcNow
         $iat = [int]$now.ToUnixTimeSeconds()
@@ -298,64 +341,92 @@ stages:
           throw 'GitHub installation token response did not include token.'
         }
 
-        Write-Host "##vso[task.setvariable variable=GITHUB_TOKEN_INT;issecret=true]$($response.token)"
+        Write-Host "##vso[task.setvariable variable=GITHUB_TOKEN;issecret=true]$($response.token)"
         Write-Host 'Token generated successfully'
-      displayName: 'Generate GitHub App Token'
+      displayName: 'Generate GitHub App Token (Internal Repo)'
       env:
-        GITHUB_APP_PRIVATE_KEY_INT: $(GITHUB_APP_PRIVATE_KEY_INT)
-        GITHUB_APP_ID_INT: $(GITHUB_APP_ID_INT)
-        GITHUB_APP_INSTALLATION_ID_INT: $(GITHUB_APP_INSTALLATION_ID_INT)
+        GITHUB_INTERNAL_APP_PRIVATE_KEY: $(GITHUB_INTERNAL_APP_PRIVATE_KEY)
+        GITHUB_INTERNAL_APP_ID: $(GITHUB_INTERNAL_APP_ID)
+        GITHUB_INTERNAL_APP_INSTALLATION_ID: $(GITHUB_INTERNAL_APP_INSTALLATION_ID)
 
     - pwsh: |
-        git config --global user.email "pipeline@energyexemplar.com"
-        git config --global user.name "Azure DevOps"
-        git config --global url."https://x-access-token:$env:GITHUB_TOKEN_INT@github.com/".insteadOf "https://github.com/"
+        git config --global user.email "ee-ravens-bot[bot]@users.noreply.github.com"
+        git config --global user.name "ee-ravens-bot[bot]"
+        # Scope extraheader to internal org only — public repo uses GITHUB_PATT embedded in its remote URL
+        # persistCredentials: false ensures azure-pipelines[bot] token is NOT stored locally
+        $basicAuth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("x-access-token:$env:GITHUB_TOKEN"))
+        git config --global http."https://github.com/energyexemplar-cloudplatform/".extraheader "Authorization: Basic $basicAuth"
+        Write-Host "[OK] Git configured with ee-ravens-bot App token (scoped to internal org)"
       displayName: 'Configure Git'
       env:
-        GITHUB_TOKEN_INT: $(GITHUB_TOKEN_INT)
+        GITHUB_TOKEN: $(GITHUB_TOKEN)
 
     - task: PowerShell@2
       displayName: 'Fetch and Sync from Public GitHub'
       env:
-        GITHUB_TOKEN_INT: $(GITHUB_TOKEN_INT)
+        GITHUB_TOKEN: $(GITHUB_TOKEN)
+        GITHUB_PATT: $(GITHUB_PATT)
       inputs:
         targetType: 'inline'
         script: |
-          $repoUrl = "https://x-access-token:$($env:GITHUB_TOKEN_INT)@github.com/EnergyExemplar/PLEXOS-Cloud-Automation-Scripts"
+          if ([string]::IsNullOrWhiteSpace($env:GITHUB_TOKEN)) {
+            Write-Host "##vso[task.logissue type=error]GITHUB_TOKEN is empty — ee-ravens-bot App token was not generated. Check Generate GitHub App Token step."
+            exit 1
+          }
+          Write-Host "[OK] ee-ravens-bot App token is present"
+
+          $repoUrl = "https://x-access-token:$($env:GITHUB_PATT)@github.com/EnergyExemplar/PLEXOS-Cloud-Automation-Scripts"
           git remote add public $repoUrl
           git fetch public master
           if ($LASTEXITCODE -ne 0) {
-            Write-Host "##vso[task.logissue type=error]Failed to fetch from public GitHub. Check GITHUB_PAT and GITHUB_REPO_URL."
+            Write-Host "##vso[task.logissue type=error]Failed to fetch from public GitHub. Check GITHUB_PATT."
             exit 1
           }
           git fetch origin master
+          git fetch origin release
 
-          # Check if there are new commits in public that aren't in internal master
-          $newCommits = git rev-list origin/master..public/master | Measure-Object -Line
+          # ── Sync public/master → internal master (squash) ──
+          $publicMasterTree  = git rev-parse "public/master^{tree}"
+          $internalMasterTree = git rev-parse "origin/master^{tree}"
+          if ($publicMasterTree -ne $internalMasterTree) {
+            Write-Host "Content differs between public/master and internal master — squash-syncing"
 
-          if ($newCommits.Lines -gt 0) {
-            Write-Host "Found $($newCommits.Lines) new commits in public GitHub — syncing into master"
-
-            # ── Merge into master ──
-            git checkout -B master origin/master
-            git merge public/master --no-edit --allow-unrelated-histories
-
-            # Exclude Public-license.md: restore internal version after merge
-            if (Test-Path "Public-license.md") {
-              git checkout origin/master -- Public-license.md
-              git commit --amend --no-edit
-              Write-Host "ℹ️  Restored internal Public-license.md (excluded from reverse sync)"
+            # Build a squash commit: full tree of public/master parented onto origin/master
+            $squashCommit = git commit-tree $publicMasterTree -p origin/master -m "merged from public repo"
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "##vso[task.logissue type=error]Failed to create squash commit for master."
+              exit 1
             }
 
-            git push origin HEAD:refs/heads/master --force-with-lease
-            Write-Host "✅ Synced public/master into internal master"
-
-            # ── Merge into release ──
-            # (commented out)
-            git checkout -B release origin/release
-            git merge public/master --no-edit
-            git push origin HEAD:refs/heads/release
-            Write-Host "✅ Synced into release"
+            git push origin "${squashCommit}:refs/heads/master"
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "##vso[task.logissue type=error]Failed to push squash commit to internal master."
+              exit 1
+            }
+            Write-Host "✅ Squash-synced public/master into internal master (commit $squashCommit)"
           } else {
-            Write-Host "ℹ️  No new commits in public GitHub to sync"
+            Write-Host "ℹ️  No new commits to sync — internal master is already up to date with public/master"
+          }
+
+          # ── Sync public/master → internal release (squash, independent of master) ──
+          $publicMasterTree   = git rev-parse "public/master^{tree}"
+          $internalReleaseTree = git rev-parse "origin/release^{tree}"
+          if ($publicMasterTree -ne $internalReleaseTree) {
+            Write-Host "Content differs between public/master and internal release — squash-syncing"
+
+            # Build a squash commit: full tree of public/master parented onto origin/release
+            $squashCommit = git commit-tree $publicMasterTree -p origin/release -m "merged from public repo"
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "##vso[task.logissue type=error]Failed to create squash commit for release."
+              exit 1
+            }
+
+            git push origin "${squashCommit}:refs/heads/release"
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "##vso[task.logissue type=error]Failed to push squash commit to internal release."
+              exit 1
+            }
+            Write-Host "✅ Squash-synced public/master into internal release (commit $squashCommit)"
+          } else {
+            Write-Host "ℹ️  No new commits to sync — internal release is already up to date with public/master"
           }

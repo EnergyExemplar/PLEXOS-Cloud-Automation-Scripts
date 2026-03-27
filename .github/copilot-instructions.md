@@ -8,14 +8,14 @@ This repository contains pre- and post-simulation automation scripts for the **P
 
 > **Always open the relevant doc before writing or reviewing any SDK call.** Do not guess parameter names — wrong names cause silent runtime errors (e.g. `Datahub.download() got an unexpected keyword argument 'remote_folder'`).
 
-**Documentation root:** `C:\Users\<user>\AppData\Local\Programs\PLEXOS.Cloud\Documentation\`
+**Documentation root:** [`Documentation/`](../Documentation/)
 
 | Topic | File | Key sections |
 |---|---|---|
-| CloudSDK method signatures, param names, response shapes | `CloudSDK.md` | `## Datahub` → `datahub.download`, `datahub.upload` |
-| SDK code-generation patterns and idioms | `CloudSDK_CodeGen.md` | Full file |
-| PLEXOS SDK public method signatures | `PLEXOS_SDK_Methods.md` | Full file |
-| PLEXOS SDK quick-reference cheat sheet | `PLEXOS_SDK_TLDR.md` | Full file |
+| CloudSDK method signatures, param names, response shapes | [`Documentation/CloudSDK.md`](../Documentation/CloudSDK.md) | `## Datahub` → `datahub.download`, `datahub.upload` |
+| PLEXOS SDK public method signatures | [`Documentation/PLEXOS_SDK_Methods.md`](../Documentation/PLEXOS_SDK_Methods.md) | Full file |
+| PLEXOS SDK quick-reference cheat sheet | [`Documentation/PLEXOS_SDK_TLDR.md`](../Documentation/PLEXOS_SDK_TLDR.md) | Full file |
+| Repository structure, script types, design rules | [`Documentation/Repository_Overview.md`](../Documentation/Repository_Overview.md) | Full file |
 
 ---
 

@@ -18,6 +18,7 @@ This repository contains reusable, ready-to-run automation scripts for PLEXOS an
 - [Environment Variables](#environment-variables)
 - [DuckDB and Solution Data](#duckdb-and-solution-data)
 - [Prerequisites](#prerequisites)
+- [SDK & CLI Documentation](#sdk--cli-documentation)
 - [Script Design Philosophy](#script-design-philosophy)
 - [Minimal Working Example](#minimal-working-example)
 - [Chaining Scripts Together](#chaining-scripts-together)
@@ -151,6 +152,8 @@ Your CLI installation includes auto-generated documentation:
 - Includes: API reference, examples, and usage guides for both SDKs
 - Updated automatically with each CLI version
 
+Copies of key reference files are also checked in to this repository under [`Documentation/`](Documentation/) — see the [SDK & CLI Documentation](#sdk--cli-documentation) section below.
+
 #### Using Custom Python Packages
 
 If you need to use a custom Python package (not available on PyPI):
@@ -171,6 +174,19 @@ If you need to use a custom Python package (not available on PyPI):
    ```
 
 > **Note:** Custom packages are the user's responsibility. Ensure compatibility with Python 3.11+ and test thoroughly.
+
+---
+
+## SDK & CLI Documentation
+
+The [`Documentation/`](Documentation/) folder contains SDK and CLI reference files used when writing or reviewing automation scripts. Always consult the relevant file before writing any SDK call — wrong parameter names cause silent runtime errors.
+
+| File | Description | Key Sections |
+|---|---|---|
+| [`CloudSDK.md`](Documentation/CloudSDK.md) | CloudSDK method signatures, parameter names, and response shapes | `## Datahub` → `datahub.download`, `datahub.upload` |
+| [`PLEXOS_SDK_Methods.md`](Documentation/PLEXOS_SDK_Methods.md) | PLEXOS SDK public method signatures | Full file |
+| [`PLEXOS_SDK_TLDR.md`](Documentation/PLEXOS_SDK_TLDR.md) | PLEXOS SDK quick-reference cheat sheet | Full file |
+| [`Repository_Overview.md`](Documentation/Repository_Overview.md) | Repo structure, script types, design rules, task definition format | Full file |
 
 ---
 

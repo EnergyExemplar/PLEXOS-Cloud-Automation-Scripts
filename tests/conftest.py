@@ -29,7 +29,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # Pre scripts
 PRE_DOWNLOAD_SCRIPT   = REPO_ROOT / "Pre"  / "PLEXOS" / "DownloadFromDataHub" / "download_from_datahub.py"
 PRE_UPDATE_HORIZON    = REPO_ROOT / "Pre"  / "PLEXOS" / "UpdateHorizon"       / "update_horizon.py"
-PRE_ENABLE_REPORTS = REPO_ROOT / "Pre" / "PLEXOS" / "EnableReports" / "enable_reports.py"
+PRE_ENABLE_REPORTS    = REPO_ROOT / "Pre"  / "PLEXOS" / "EnableReports"       / "enable_reports.py"
 
 # Post scripts
 NEW_PRE_PARQUET_CSV  = REPO_ROOT / "Pre"  / "PLEXOS" / "ParquetToCsv" / "convert_parquet_to_csv.py"
@@ -46,6 +46,7 @@ POST_QUERY_WRITE_MEMBERSHIPS    = REPO_ROOT / "Post" / "PLEXOS" / "QueryWriteMem
 POST_QUERY_LMP_DATA           = REPO_ROOT / "Post" / "PLEXOS" / "QueryLmpData"                  / "query_lmp_data.py"
 POST_WRITE_REPORTED_PROPERTIES  = REPO_ROOT / "Post" / "PLEXOS" / "WriteReportedProperties"   / "write_reported_properties.py"
 POST_UPLOAD_SOLUTION_ZIP_TO_DATAHUB = REPO_ROOT / "Post" / "PLEXOS" / "UploadSolutionZipToDatahub" / "upload_solution_zip_to_datahub.py"
+POST_SEARCH_AND_UPLOAD = REPO_ROOT / "Post" / "PLEXOS" / "SearchAndUpload" / "search_and_upload.py"
 
 # Aurora Post scripts
 POST_AURORA_TO_PARQUET    = REPO_ROOT / "Post" / "Aurora" / "AuroraToParquet" / "aurora_to_parquet.py"
@@ -113,11 +114,12 @@ def get_module(key: str):
             "query_lmp_data":               (POST_QUERY_LMP_DATA,          "query_lmp_data"),
             "write_reported_properties":     (POST_WRITE_REPORTED_PROPERTIES, "write_reported_properties"),
             "upload_solution_zip_to_datahub":  (POST_UPLOAD_SOLUTION_ZIP_TO_DATAHUB, "upload_solution_zip_to_datahub"),
+            "search_and_upload":               (POST_SEARCH_AND_UPLOAD,              "search_and_upload"),
             # Aurora Post scripts
             "aurora_to_parquet":           (POST_AURORA_TO_PARQUET,   "aurora_to_parquet"),
             # Pre PLEXOS scripts (SDK-dependent)
             "update_horizon":              (PRE_UPDATE_HORIZON,       "update_horizon"),
-            "enable_reports":             (PRE_ENABLE_REPORTS,       "enable_reports"),
+            "enable_reports":             (PRE_ENABLE_REPORTS,          "enable_reports"),
             # Automation scripts
             "ts_auto":             (AUTO_TS_SCRIPT,           "ts_comparison_auto"),
             "auto_download":       (AUTO_DOWNLOAD_SCRIPT,     "auto_download_from_datahub"),
