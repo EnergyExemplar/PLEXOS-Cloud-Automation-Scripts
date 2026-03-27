@@ -57,8 +57,8 @@ Add membership between parent and child objects.
 - `InvalidObjectClassError`: If parent or child class doesn't match collection
 - `MembershipAlreadyExistsError`: If membership already exists
 
-### `remove_membership(parent_class_lang_id: int, collection_lang_id: int, parent_name: str, child_name: str) -> bool`
-Remove membership between parent and child objects using deterministic collection lookup.
+### `remove_membership_by_lang_id(parent_class_lang_id: int, collection_lang_id: int, parent_name: str, child_name: str) -> bool`
+Remove membership between parent and child objects using lang_id-based collection lookup.
 
 ### `remove_membership(membership: Membership) -> bool`
 Remove membership using membership object.

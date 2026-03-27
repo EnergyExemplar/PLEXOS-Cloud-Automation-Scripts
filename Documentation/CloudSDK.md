@@ -1,4 +1,4 @@
-# CloudSDK Documentation 1.5.2551.431
+# CloudSDK Documentation 1.5.2517.414
 
 This document contains comprehensive documentation for all public functions in the CloudSDK, including detailed parameter descriptions, usage examples, and best practices.
 
@@ -1102,7 +1102,6 @@ Download files from Datahub using glob patterns
   - `LocalFilePath`: Optional[str]
   - `FailureReason`: Optional[str]
   - `Success`: Optional[bool]
-  - `Skipped`: Optional[bool]
   - `Version`: Optional[int]
   - `IsFromConnector`: Optional[bool]
   - `SnapshotDateUtc`: Optional[str]
@@ -1145,7 +1144,7 @@ if datahub_download_final is not None:
             print(f"RelativeToDirectoryOutputPath: {item.RelativeToDirectoryOutputPath}")
             print(f"LocalFilePath: {item.LocalFilePath}")
             print(f"FailureReason: {item.FailureReason}")
-            # ... and 5 more properties
+            # ... and 4 more properties
     else:
         print(f"No DatahubResourceResults returned")
 else:
@@ -1158,13 +1157,12 @@ else:
 
 Executes SQL queries against Datahub resource
 
-**Signature:** `query(sql: str, multiple_relative_path: Optional[list[str]], relative_path: Optional[str], output_file: Optional[str], print_message: bool)`
+**Signature:** `query(sql: str, multiple_relative_path: Optional[list[str]], relative_path: Optional[str], print_message: bool)`
 
 **Parameters:**
 - `sql` (str) *(required)*: SQL query to execute
 - `multiple_relative_path` (Optional[list[str]]) *(optional)*: multiple_relative_path parameter (default: `None`)
 - `relative_path` (Optional[str]) *(optional)*: relative_path parameter (default: `None`)
-- `output_file` (Optional[str]) *(optional)*: File path to export query results as CSV. If the file already exists, it will be overwritten. (default: `None`)
 - `print_message` (bool) *(optional)*: Enable verbose SDK logs for troubleshooting (default: `False`)
 
 **Returns:** `Contracts_DatahubQueryResponse`
@@ -1178,15 +1176,8 @@ Executes SQL queries against Datahub resource
 sql = "select * from fullkeyinfo"
 multiple_relative_path = "value"
 relative_path = "value"
-output_file = r"c:\path\to\output.csv"
 
-datahub_query_resp: list[CommandResponse[Contracts_DatahubQueryResponse]] = pxc.datahub.query(
-    sql=sql,
-    multiple_relative_path=multiple_relative_path,
-    relative_path=relative_path,
-    output_file=output_file,
-    print_message=True
-)
+datahub_query_resp: list[CommandResponse[Contracts_DatahubQueryResponse]] = pxc.datahub.query(sql=sql, multiple_relative_path=multiple_relative_path, relative_path=relative_path, print_message=True)
 datahub_query_final: Contracts_DatahubQueryResponse = SDKBase.get_response_data(datahub_query_resp)
 
 if datahub_query_final is not None:
@@ -1225,7 +1216,6 @@ Revert files to a previous version
   - `LocalFilePath`: Optional[str]
   - `FailureReason`: Optional[str]
   - `Success`: Optional[bool]
-  - `Skipped`: Optional[bool]
   - `Version`: Optional[int]
   - `IsFromConnector`: Optional[bool]
   - `SnapshotDateUtc`: Optional[str]
@@ -1254,7 +1244,7 @@ if datahub_revert_final is not None:
             print(f"RelativeToDirectoryOutputPath: {item.RelativeToDirectoryOutputPath}")
             print(f"LocalFilePath: {item.LocalFilePath}")
             print(f"FailureReason: {item.FailureReason}")
-            # ... and 5 more properties
+            # ... and 4 more properties
     else:
         print(f"No DatahubResourceResults returned")
 else:
@@ -1397,7 +1387,6 @@ Upload files to Datahub
   - `LocalFilePath`: Optional[str]
   - `FailureReason`: Optional[str]
   - `Success`: Optional[bool]
-  - `Skipped`: Optional[bool]
   - `Version`: Optional[int]
   - `IsFromConnector`: Optional[bool]
   - `SnapshotDateUtc`: Optional[str]
@@ -1432,7 +1421,7 @@ if datahub_upload_final is not None:
             print(f"RelativeToDirectoryOutputPath: {item.RelativeToDirectoryOutputPath}")
             print(f"LocalFilePath: {item.LocalFilePath}")
             print(f"FailureReason: {item.FailureReason}")
-            # ... and 5 more properties
+            # ... and 4 more properties
     else:
         print(f"No DatahubResourceResults returned")
 else:
@@ -3849,12 +3838,11 @@ else:
 
 Execute SQL queries against Solution resources
 
-**Signature:** `query_solution_sql(solution_id: str, sql: str, output_file: Optional[str], print_message: bool)`
+**Signature:** `query_solution_sql(solution_id: str, sql: str, print_message: bool)`
 
 **Parameters:**
 - `solution_id` (str) *(required)*: Unique identifier for a specific solution (use ModelIdentifier.Id from simulation results)
 - `sql` (str) *(required)*: SQL query to execute
-- `output_file` (Optional[str]) *(optional)*: File path to export query results as CSV. If the file already exists, it will be overwritten. (default: `None`)
 - `print_message` (bool) *(optional)*: Enable verbose SDK logs for troubleshooting (default: `False`)
 
 **Returns:** `Contracts_SolutionQueryResponse`
@@ -3867,9 +3855,8 @@ Execute SQL queries against Solution resources
 ```python
 solution_id = "550e8400-e29b-41d4-a716-446655440000"
 sql = "select * from fullkeyinfo"
-output_file = r"c:\path\to\output.csv"
 
-solution_query_solution_sql_resp: list[CommandResponse[Contracts_SolutionQueryResponse]] = pxc.solution.query_solution_sql(solution_id=solution_id, sql=sql, output_file=output_file, print_message=True)
+solution_query_solution_sql_resp: list[CommandResponse[Contracts_SolutionQueryResponse]] = pxc.solution.query_solution_sql(solution_id=solution_id, sql=sql, print_message=True)
 solution_query_solution_sql_final: Contracts_SolutionQueryResponse = SDKBase.get_response_data(solution_query_solution_sql_resp)
 
 if solution_query_solution_sql_final is not None:
