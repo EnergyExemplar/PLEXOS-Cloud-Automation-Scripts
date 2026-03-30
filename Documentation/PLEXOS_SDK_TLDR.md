@@ -15,7 +15,6 @@
       - [Method 2: Using Lang IDs (Simpler for single assignments but has to make extra database calls so inefficient for loops and bulk operations)](#method-2-using-lang-ids-simpler-for-single-assignments-but-has-to-make-extra-database-calls-so-inefficient-for-loops-and-bulk-operations)
     - [Memberships](#memberships)
     - [Properties](#properties)
-      - [Properties do not have 2 different methods like attributes, but may be included in future versions if requested.](#properties-do-not-have-2-different-methods-like-attributes-but-may-be-included-in-future-versions-if-requested)
     - [Report Configuration](#report-configuration)
     - [Categories](#categories)
   - [⏰ Time Management](#-time-management)
@@ -41,6 +40,7 @@
     - [Performance](#performance)
     - [Limitations](#limitations)
     - [Date Ranges](#date-ranges)
+
 <div style="page-break-after: always;"></div>
 
 ## 🚀 Installation & Setup
@@ -83,7 +83,7 @@ data: Data = sdk.add_property(membership, property_obj, 500.0)  # Returns hydrat
 print(f"Generator: {generator.name}, Class: {generator.class_ref.name}")
 print(f"Property Value: {data.value}, Property: {data.property_ref.name}")
 
-# NEW: Access text and tag relationships directly (if created)
+# Access text and tag relationships directly (if created)
 if data.texts:
     print(f"Data File Text: {data.texts[0].value}")
 if data.tags:
@@ -127,9 +127,6 @@ generator: Object = sdk.add_object(class_lang_id=ClassEnum.Generator, object_nam
 # Add object with category object (recommended)
 category: Category = sdk.get_category_by_name(ClassEnum.Generator, "Wind")
 generator: Object = sdk.add_object(class_lang_id=ClassEnum.Generator, object_name="Generator1", category_obj=category, description="Wind generator")
-
-# Add object with category name (legacy)
-generator: Object = sdk.add_object(class_lang_id=ClassEnum.Generator, object_name="Generator1", category_name="Wind", description="Wind generator")
 
 # Get object -> returns Object model
 obj: Object = sdk.get_object_by_name(class_lang_id=ClassEnum.Generator, object_name="Generator1")
@@ -184,7 +181,7 @@ generator: Object = sdk.add_object(class_lang_id=ClassEnum.Generator, object_nam
 membership: Membership = sdk.add_membership(collection=collection_obj, parent=parent_obj, child=child_obj)
 
 # Remove membership -> returns bool
-success: bool = sdk.remove_membership(parent_class_lang_id=ClassEnum.Fuel, collection_lang_id=CollectionEnum.Fuels, parent_name="ParentName", child_name="ChildName")
+success: bool = sdk.remove_membership_by_lang_id(parent_class_lang_id=ClassEnum.Fuel, collection_lang_id=CollectionEnum.Fuels, parent_name="ParentName", child_name="ChildName")
 
 # Get memberships -> returns model lists
 parents: List[Object] = sdk.get_parent_members(parent_class_lang_id=ClassEnum.Fuel, collection_lang_id=CollectionEnum.Fuels, child_name="ChildName")
@@ -193,53 +190,74 @@ memberships: List[Membership] = sdk.get_child_memberships(parent_class_lang_id=C
 ```
 <div style="page-break-after: always;"></div>
 
-### Properties 
-#### Flexible property specification with automatic text/tag creation
+### Properties
 ```python
-# Basic property (backward compatible) -> returns hydrated Data
-data: Data = sdk.add_property(membership=membership, property_obj=property_obj, value=value, band_id=1)
-
-# Property with flexible specification (Property object, lang_id, or name)
-data: Data = sdk.add_property(membership=membership, property_spec=PropertyEnum_Generators.MaxOutput, value=500.0)
-data: Data = sdk.add_property(membership=membership, property_spec=123, value=500.0)  # Using lang_id
-data: Data = sdk.add_property(membership=membership, property_spec="MaxOutput", value=500.0)  # Using name
-
-# Property with date range -> returns hydrated Data
-data: Data = sdk.add_property(membership=membership, property_obj=property_obj, value=value, 
-                date_from="2030-01-01T00:00:00", 
-                date_to="2030-12-31T00:00:00")
-
-# Property with automatic text creation (NEW - no need to create Text objects manually)
-data: Data = sdk.add_property(membership=membership, property_obj=property_obj, value=value,
-                data_file_text="path/to/data.csv",  # Auto-creates Text for data file
-                time_slice_text="M7-12")  # Auto-creates Text for time slice (July-December)
-
-# Property with automatic tag creation (NEW - no need to create Tag objects manually)
-data: Data = sdk.add_property(membership=membership, property_obj=property_obj, value=value,
-                data_file_tag=data_file_obj,  # Auto-creates Tag for data file
-                scenario_tag=scenario_obj,  # Auto-creates Tag for scenario
-                expression_tag=expression_obj)  # Auto-creates Tag for expression
-
-# Combined example with multiple features
-data: Data = sdk.add_property(
-    membership=membership, 
-    property_spec=PropertyEnum_Generators.MaxOutput,
-    value=500.0,
-    data_file_text="wind_data.csv",
-    time_slice_text="M1-6",  # January-June
-    data_file_tag=data_file_obj,
-    band_id=2,
-    date_from="2030-01-01T00:00:00",
-    date_to="2030-06-30T00:00:00"
+# Get property first (required)
+property_obj = sdk.get_property(
+    parent_class_lang_id=ClassEnum.System,
+    collection_lang_id=CollectionEnum.Generators,
+    property_lang_id=PropertyEnum_Generators.MaxOutput
 )
 
-# Get property value -> returns float value
+# Basic property
+data: Data = sdk.add_property(membership=membership,property_obj=property_obj, value=500.0)
+
+# With date range
+data: Data = sdk.add_property(
+    membership=membership, 
+    property_obj=property_obj, 
+    value=500.0,
+    date_from="2030-01-01T00:00:00", 
+    date_to="2030-12-31T00:00:00"
+)
+
+# With text creation
+data: Data = sdk.add_property(
+    membership=membership, 
+    property_obj=property_obj, 
+    value=500.0,
+    data_file_text="path/to/data.csv",
+    time_slice_text="M7-12"  # July-December
+)
+
+# With tags
+data: Data = sdk.add_property(
+    membership=membership, 
+    property_obj=property_obj, 
+    value=500.0,
+    data_file_tag=data_file_obj,
+    scenario_tag=scenario_obj,
+    expression_tag=variable_obj
+)
+
+# Method 1: Lookup action first (recommended for bulk operations)
+action_obj = Action.get(Action.action_symbol == "×")
+variable_obj = sdk.add_object(ClassEnum.Variable, "MyVariable")
+scenario_obj = sdk.add_object(ClassEnum.Scenario, "MyScenario")
+data: Data = sdk.add_property(
+    membership=membership,
+    property_obj=property_obj,
+    value=500.0,
+    scenario_tag=scenario_obj,
+    expression_tag=variable_obj,
+    action=action_obj  # Using Action object
+)
+
+# Method 2: Specify action symbol directly (simpler for single operations)
+variable_obj2 = sdk.add_object(ClassEnum.Variable, "MyVariable")
+scenario_obj2 = sdk.add_object(ClassEnum.Scenario, "MyScenario")
+data: Data = sdk.add_property(
+    membership=membership,
+    property_obj=property_obj,
+    value=500.0,
+    scenario_tag=scenario_obj2,
+    expression_tag=variable_obj2,
+    action="×"  # Action symbol string
+)
+
+# Other property operations
 value: float = sdk.get_property_value(membership=membership, property_obj=property_obj)
-
-# Update property -> returns updated Data model
 updated_data: Data = sdk.update_property(membership=membership, property_obj=property_obj, value=new_value)
-
-# Remove property -> returns bool
 success: bool = sdk.remove_property(membership=membership, property_obj=property_obj)
 ```
 <div style="page-break-after: always;"></div>
@@ -344,35 +362,38 @@ with PLEXOSSDK("my_model.db") as sdk:
             step_count=12,
             step_type=3  # Monthly
         )
-        
+
         # 2. Add generator with category -> returns models
-category: Category = sdk.add_category(ClassEnum.Generator, "Wind", "Wind generators")
-generator: Object = sdk.add_object(class_lang_id=ClassEnum.Generator, object_name="WindFarm1", category_obj=category)
-        
+        category: Category = sdk.add_category(ClassEnum.Generator, "Wind", "Wind generators")
+        generator: Object = sdk.add_object(class_lang_id=ClassEnum.Generator, object_name="WindFarm1", category_obj=category)
+
         # 3. Add attributes (object-level settings) -> returns AttributeData
-attr_data: AttributeData = sdk.add_attribute_by_lang_id(generator, AttributeEnum_Generator.MaxOutput, 600.0)
-        
-        # 4. Add properties (membership-level settings) -> returns hydrated Data models
-membership: Membership = sdk.get_membership_by_child_name(parent_class_lang_id=ClassEnum.System, collection_lang_id=CollectionEnum.Generators, parent_name="System", child_name="WindFarm1")
+        attr_data: AttributeData = sdk.add_attribute_by_lang_id(generator, AttributeEnum_Generator.MaxOutput, 600.0)
 
-# Method 1: Using Property object (traditional)
-capacity_prop: Property = sdk.get_property(parent_class_lang_id=ClassEnum.System, collection_lang_id=CollectionEnum.Generators, property_lang_id=PropertyEnum_Generators.Capacity)
-data: Data = sdk.add_property(membership, capacity_prop, 500.0)
+        # 4. Add properties (membership-level settings)
+        membership: Membership = sdk.get_membership_by_child_name(
+            parent_class_lang_id=ClassEnum.System,
+            collection_lang_id=CollectionEnum.Generators,
+            parent_name="System",
+            child_name="WindFarm1"
+        )
 
-# Method 2: Using flexible property specification (NEW)
-data: Data = sdk.add_property(membership, PropertyEnum_Generators.Capacity, 500.0)  # Using enum
-data: Data = sdk.add_property(membership, "Capacity", 500.0)  # Using property name
-data: Data = sdk.add_property(membership, 123, 500.0)  # Using lang_id
+        capacity_prop = sdk.get_property(
+            parent_class_lang_id=ClassEnum.System,
+            collection_lang_id=CollectionEnum.Generators,
+            property_lang_id=PropertyEnum_Generators.Capacity
+        )
+        data: Data = sdk.add_property(membership, capacity_prop, 500.0)
 
-# Method 3: With automatic text/tag creation (NEW)
-data: Data = sdk.add_property(
-    membership, 
-    PropertyEnum_Generators.Capacity, 
-    500.0,
-    data_file_text="wind_capacity.csv",
-    time_slice_text="M1-12",  # January-December
-    data_file_tag=data_file_obj
-)
+        # With text/tag creation
+        data: Data = sdk.add_property(
+            membership,
+            property_obj=capacity_prop,
+            value=500.0,
+            data_file_text="wind_capacity.csv",
+            time_slice_text="M1-12",
+            data_file_tag=data_file_obj
+        )
 ```
 
 > **Pro Tip:** For database creation and enum generation, see [Database Management](#-database-management) and [Enum Generation](#-enum-generation) sections.
@@ -533,7 +554,7 @@ collection: Collection = sdk.get_collection(parent_class_lang_id=ClassEnum.Syste
 
 ```python
 from plexos_sdk.exceptions import (
-    InvalidObjectNameError, ObjectNotFoundError, SystemObjectError,
+    ActionNotFoundError, InvalidObjectNameError, ObjectNotFoundError, SystemObjectError,
     ClassNotFoundError, CollectionDisabledError, ValidationError,
     InvalidDateError, PropertyAlreadyExistsError, AttributeAlreadyExistsError,
     MembershipAlreadyExistsError, CategoryAlreadyExistsError,
@@ -567,6 +588,16 @@ try:
     collection: Collection = sdk.get_collection(ClassEnum.System, 99999)  # Invalid collection
 except CollectionNotFoundError as e:
     print(f"Collection not found: {e}")  # Clear error message
+
+try:
+    variable_obj = sdk.add_object(ClassEnum.Variable, "TestVariable")
+    data: Data = sdk.add_property(membership, property_obj, 100.0, 
+                                   expression_tag=variable_obj,
+                                   action="NonExistentAction")
+except ActionNotFoundError as e:
+    print(f"Action not found: {e}")  # Clear error message when action symbol doesn't exist
+except ValidationError as e:
+    print(f"Validation error: {e}")  # Error if action provided without expression_tag
 ```
 <div style="page-break-after: always;"></div>
 
@@ -578,49 +609,146 @@ from plexos_sdk.models.plexos_models import Text, Tag
 # Complete workflow with horizon and object creation
 with sdk.transaction():
     # 1. Create horizon for the simulation -> returns Object (Horizon class)
-    horizon: Object = sdk.create_horizon(name="2024-2025 Analysis", date_from=datetime(2024, 1, 1), step_count=24, step_type=3, description="24-month analysis period")
-    
+    horizon: Object = sdk.create_horizon(
+        name="2024-2025 Analysis",
+        date_from=datetime(2024, 1, 1),
+        step_count=24,
+        step_type=3,
+        description="24-month analysis period"
+    )
+
     # 2. Add object (automatically adds to System membership) -> returns Object
-wind_farm_obj: Object = sdk.add_object(class_lang_id=ClassEnum.Generator, object_name="WindFarm1", category_name="Wind", description="Wind farm")
-    
-    # Get the membership that was automatically created -> returns Membership model
-membership: Membership = sdk.get_membership_by_child_name(parent_class_lang_id=ClassEnum.System, collection_lang_id=CollectionEnum.Generators, parent_name="System", child_name="WindFarm1"))
+    category: Category = sdk.get_category_by_name(ClassEnum.Generator, "Wind")
+    wind_farm_obj: Object = sdk.add_object(
+        class_lang_id=ClassEnum.Generator,
+        object_name="WindFarm1",
+        category_obj=category,
+        description="Wind farm"
+    )
 
-    # Basic capacity property (traditional method) -> returns hydrated Data models
-capacity_prop: Property = sdk.get_property(parent_class_lang_id=ClassEnum.System, collection_lang_id=CollectionEnum.Generators, property_lang_id=PropertyEnum_Generators.Capacity)
-capacity_data: Data = sdk.add_property(membership=membership, property_obj=capacity_prop, value=500.0)
+    # Get the membership that was automatically created
+    membership: Membership = sdk.get_membership_by_child_name(
+        parent_class_lang_id=ClassEnum.System,
+        collection_lang_id=CollectionEnum.Generators,
+        parent_name="System",
+        child_name="WindFarm1"
+    )
 
-# Property with flexible specification (NEW) -> returns hydrated Data models
-capacity_data: Data = sdk.add_property(membership=membership, property_spec=PropertyEnum_Generators.Capacity, value=500.0)
-capacity_data: Data = sdk.add_property(membership=membership, property_spec="Capacity", value=500.0)
+    # Get property and add it
+    capacity_prop = sdk.get_property(
+        parent_class_lang_id=ClassEnum.System,
+        collection_lang_id=CollectionEnum.Generators,
+        property_lang_id=PropertyEnum_Generators.Capacity
+    )
+    capacity_data: Data = sdk.add_property(membership=membership, property_obj=capacity_prop, value=500.0)
 
-# Property with automatic text creation (NEW) -> returns hydrated Data models
-availability_data: Data = sdk.add_property(
-    membership=membership, 
-    property_spec=PropertyEnum_Generators.Availability, 
-    value=0.95,
-    data_file_text="availability_data.csv",
-    time_slice_text="M7-12"  # July-December
-)
+    # With text creation
+    availability_prop = sdk.get_property(
+        parent_class_lang_id=ClassEnum.System,
+        collection_lang_id=CollectionEnum.Generators,
+        property_lang_id=PropertyEnum_Generators.Availability
+    )
+    availability_data: Data = sdk.add_property(
+        membership=membership,
+        property_obj=availability_prop,
+        value=0.95,
+        data_file_text="availability_data.csv",
+        time_slice_text="M7-12"
+    )
 
-# Property with automatic tag creation and date range (NEW) -> returns hydrated Data models
-fuel_cost_data: Data = sdk.add_property(
-    membership=membership, 
-    property_spec=PropertyEnum_Generators.FuelCost, 
-    value=45.0,
-    data_file_tag=data_file_obj,
-    date_from="2030-01-01T00:00:00"
-)
+    # With tags and date range
+    fuel_cost_prop = sdk.get_property(
+        parent_class_lang_id=ClassEnum.System,
+        collection_lang_id=CollectionEnum.Generators,
+        property_lang_id=PropertyEnum_Generators.FuelCost
+    )
+    fuel_cost_data: Data = sdk.add_property(
+        membership=membership,
+        property_obj=fuel_cost_prop,
+        value=45.0,
+        data_file_tag=data_file_obj,
+        date_from="2030-01-01T00:00:00"
+    )
 
-# Add attributes -> returns Attribute and AttributeData
-max_output_attr: Attribute = sdk.get_attribute(class_lang_id=ClassEnum.Generator, attribute_lang_id=AttributeEnum_Generator.MaxOutput)
-attr_data: AttributeData = sdk.add_attribute(object_obj=wind_farm_obj, attribute=max_output_attr, value=600.0)
+    # Add attributes -> returns Attribute and AttributeData
+    max_output_attr: Attribute = sdk.get_attribute(
+        class_lang_id=ClassEnum.Generator,
+        attribute_lang_id=AttributeEnum_Generator.MaxOutput
+    )
+    attr_data: AttributeData = sdk.add_attribute(object_obj=wind_farm_obj, attribute=max_output_attr, value=600.0)
 ```
 
 <div style="page-break-after: always;"></div>
 
 
 ## ⚠️ Important Notes
+
+### Automatic System Relationships
+
+**When you create an object, the SDK automatically creates a System membership** for that object. This is the default parent-child relationship in PLEXOS where all objects belong to the System.
+
+**How it works:**
+- When you call `add_object()`, the SDK automatically:
+  1. Creates the object
+  2. Finds the appropriate collection for `System → ObjectClass` relationship
+  3. Creates a membership linking `System` (parent) to your new object (child)
+  4. Returns the object with the membership already created
+
+**Important points:**
+- **No manual membership creation needed** - The System membership is created automatically
+- **Collection is auto-detected** - The SDK finds the correct collection based on the object's class
+- **All classes get System memberships** - Any class that has a System → Class collection defined in seed data
+- **Access the membership** - Use `get_membership_by_child_name()` or access via `object.child_memberships`
+
+**Example:**
+```python
+# Create a generator - System membership is automatically created
+generator: Object = sdk.add_object(ClassEnum.Generator, "WindFarm1")
+
+# Access the automatically created System membership
+membership: Membership = sdk.get_membership_by_child_name(
+    parent_class_lang_id=ClassEnum.System,
+    collection_lang_id=CollectionEnum.Generators,
+    parent_name="System",
+    child_name="WindFarm1"
+)
+
+# Or access via object's child_memberships (if hydrated)
+if generator.child_memberships:
+    system_membership = generator.child_memberships[0]
+    print(f"System membership ID: {system_membership.membership_id}")
+```
+
+### Property Duplicate Detection
+
+The SDK performs comprehensive duplicate detection when adding properties. Two properties are considered duplicates only if **ALL** aspects of the property graph match:
+
+- **Membership and Property**: Same membership and property
+- **Band ID**: Same band_id (default is 1)
+- **Value**: Same numeric value
+- **Texts**: Same set of Text objects (data_file_text, time_slice_text) - compared by class_id, value, and action_id
+- **Tags**: Same set of Tag objects (data_file_tag, scenario_tag, expression_tag) - compared by object_id and action_id
+- **Date Ranges**: Same date_from and date_to values
+
+**Note:** Memos are **not** part of duplicate detection because they are added after property creation using `add_memo_data()`. Properties with the same property graph but different memos can coexist - the memo is added separately after the property is created.
+
+**Important behaviors:**
+- Properties with different **scenario tags** are considered **unique** (different scenarios = different records)
+- Properties with different **expression tags** (Variables) are considered **unique**
+- Properties with different **data_file_tags** are considered **unique**
+- Properties can have **multiple tags** - all tags are compared as a set
+- Properties with different **date ranges** are considered **unique**
+- Properties with different **band_ids** are considered **unique**
+
+**Example:**
+```python
+# These are UNIQUE (different scenario tags)
+sdk.add_property(membership, prop, 100.0, scenario_tag=scenario1)  # OK
+sdk.add_property(membership, prop, 100.0, scenario_tag=scenario2)  # OK - different scenario
+
+# This would raise PropertyAlreadyExistsError (exact duplicate)
+sdk.add_property(membership, prop, 100.0, scenario_tag=scenario1)  # Error - duplicate
+```
 
 ### Data Integrity
 - **Always use transactions** for multiple operations
@@ -641,10 +769,3 @@ attr_data: AttributeData = sdk.add_attribute(object_obj=wind_farm_obj, attribute
 - **Format**: ISO format `"2030-01-01T00:00:00"`
 - **Independent**: Can use `date_from` or `date_to` separately
 - **Validation**: `date_from` ≤ `date_to` when both provided
-
-### Property Management (NEW Features)
-- **Flexible Specification**: `add_property` accepts Property objects, lang_ids, or property names
-- **Automatic Text Creation**: Use `data_file_text` and `time_slice_text` parameters to auto-create Text objects
-- **Automatic Tag Creation**: Use `data_file_tag`, `scenario_tag`, and `expression_tag` parameters to auto-create Tag objects
-- **Hydrated Returns**: `add_property` returns fully hydrated Data objects with relationships loaded
-- **Backward Compatible**: Old signature still works for existing code
