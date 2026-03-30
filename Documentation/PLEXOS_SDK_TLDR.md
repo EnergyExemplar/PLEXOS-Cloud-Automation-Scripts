@@ -11,10 +11,9 @@
   - [📋 Core Operations](#-core-operations)
     - [Objects](#objects)
     - [Attributes](#attributes)
-      - [Method 1: Using Attribute Objects (Recommended for bulk operations)](#method-1-using-attribute-objects-recommended-for-bulk-operations)
-      - [Method 2: Using Lang IDs (Simpler for single assignments but has to make extra database calls so inefficient for loops and bulk operations)](#method-2-using-lang-ids-simpler-for-single-assignments-but-has-to-make-extra-database-calls-so-inefficient-for-loops-and-bulk-operations)
     - [Memberships](#memberships)
     - [Properties](#properties)
+    - [Memos](#memos)
     - [Report Configuration](#report-configuration)
     - [Categories](#categories)
   - [⏰ Time Management](#-time-management)
@@ -22,26 +21,23 @@
     - [Date Utilities](#date-utilities)
   - [🚀 Quick Start Example](#-quick-start-example)
   - [🗄️ Database Management](#️-database-management)
-    - [Creating Databases](#creating-databases)
-      - [Advanced feature to start a new empty database.](#advanced-feature-to-start-a-new-empty-database)
+    - [XML Conversion](#xml-conversion)
   - [🎯 Enum Generation](#-enum-generation)
-    - [Python API](#python-api)
-    - [CLI Tools](#cli-tools)
-  - [🌱 Seed Data Management](#-seed-data-management)
-    - [SQL-Based Seed Data](#sql-based-seed-data)
-    - [Zip Package Management](#zip-package-management)
-  - [🖥️ Command Line Tools](#️-command-line-tools)
   - [🎯 Data Enums/Identifiers](#-data-enumsidentifiers)
   - [🔍 Query Methods](#-query-methods)
   - [🔧 Error Handling](#-error-handling)
   - [📚 Common Patterns](#-common-patterns)
+  - [🌱 Seed Data Management](#-seed-data-management)
+    - [Why Seed Data?](#why-seed-data)
+    - [How Seed Data Is Produced](#how-seed-data-is-produced)
+    - [Creating Databases from Seed Data](#creating-databases-from-seed-data)
   - [⚠️ Important Notes](#️-important-notes)
     - [Data Integrity](#data-integrity)
     - [Performance](#performance)
     - [Limitations](#limitations)
     - [Date Ranges](#date-ranges)
 
-<div style="page-break-after: always;"></div>
+
 
 ## 🚀 Installation & Setup
 
@@ -55,11 +51,32 @@ pip install plexos_sdk-*.whl
 **Recommended to use transactions for ALL inserts or updates. This ensures your changes are all valid, or nothing is updated. This reduces chance of corrupting data**
 
 ```python
-# Use transactions for data integrity
+# Use transactions for data integrity (recommended — auto-commits on success, auto-rolls back on error)
 with sdk.transaction():
     sdk.add_object(class_lang_id=ClassEnum.Generator, object_name="Generator1")
     sdk.add_membership(collection=collection_obj, parent=system_obj, child=generator_obj)
     # All operations succeed or fail together
+```
+
+#### Manual Transaction Control
+The context manager auto-commits when the `with` block exits successfully. For advanced scenarios you can commit or rollback manually:
+
+```python
+# Manual commit (rarely needed — the context manager commits automatically)
+with sdk.transaction():
+    sdk.add_object(class_lang_id=ClassEnum.Generator, object_name="Generator1")
+    sdk.commit()  # Explicitly commit mid-transaction
+
+# Rollback — undo all changes since the transaction started
+# Useful when validation logic AFTER writes determines the batch is invalid
+with sdk.transaction():
+    sdk.add_object(class_lang_id=ClassEnum.Generator, object_name="Generator1")
+    if some_validation_fails:
+        sdk.rollback()  # Discard all changes — database unchanged
+
+# Check if currently inside a transaction
+if sdk.in_transaction():
+    print("Inside a transaction")
 ```
 
 ## 🏗️ Hydrated Models
@@ -89,7 +106,7 @@ if data.texts:
 if data.tags:
     print(f"Data File Tag: {data.tags[0].object_ref.name}")
 ```
-<div style="page-break-after: always;"></div>
+
 ## 🔧 Basic Usage
 
 ```python
@@ -99,7 +116,7 @@ from plexos_sdk.exceptions import * # access to any custom exceptions
 #domain/version specific enum.py file
 from electric_enums import * # access to ENUMS
 
-# Connect to database
+# Connect to database (accepts str or Path)
 with PLEXOSSDK("my_model.db") as sdk:
     try:
         with sdk.transaction():
@@ -115,7 +132,7 @@ with PLEXOSSDK("my_model.db") as sdk:
         traceback.print_exc()
         return
 ```
-<div style="page-break-after: always;"></div>
+
 
 ## 📋 Core Operations
 
@@ -134,7 +151,7 @@ obj: Object = sdk.get_object_by_name(class_lang_id=ClassEnum.Generator, object_n
 # Remove object -> returns bool
 success: bool = sdk.remove_object_by_name(class_lang_id=ClassEnum.Generator, object_name="Generator1")
 ```
-<div style="page-break-after: always;"></div>
+
 
 ### Attributes
 
@@ -157,20 +174,29 @@ value: float = sdk.get_attribute_value(object_obj=generator_obj, attribute=attri
 ```python
 # Add attribute using lang_id (simpler for single assignments) -> returns AttributeData
 attr_data: AttributeData = sdk.add_attribute_by_lang_id(
-    object_obj=generator_obj, 
-    attribute_lang_id=AttributeEnum_Generator.MaxOutput, 
+    object_obj=generator_obj,
+    attribute_lang_id=AttributeEnum_Generator.MaxOutput,
     value=600.0
 )
 
 # Get attribute value by IDs -> returns float value
 value: float = sdk.get_attribute_value_by_ids(
-    class_lang_id=ClassEnum.Generator, 
-    object_name="Generator1", 
+    class_lang_id=ClassEnum.Generator,
+    object_name="Generator1",
     attribute_lang_id=AttributeEnum_Generator.MaxOutput
 )
 ```
 
-<div style="page-break-after: always;"></div>
+#### Update & Remove Attributes
+```python
+# Update an existing attribute value -> returns AttributeData
+updated: AttributeData = sdk.update_attribute(object_obj=generator_obj, attribute=attribute_obj, value=750.0)
+
+# Remove an attribute from an object -> returns bool
+success: bool = sdk.remove_attribute(object_obj=generator_obj, attribute=attribute_obj)
+```
+
+
 
 ### Memberships
 ```python
@@ -188,7 +214,7 @@ parents: List[Object] = sdk.get_parent_members(parent_class_lang_id=ClassEnum.Fu
 children: List[Object] = sdk.get_child_members(parent_class_lang_id=ClassEnum.Fuel, collection_lang_id=CollectionEnum.Fuels, parent_name="ParentName")
 memberships: List[Membership] = sdk.get_child_memberships(parent_class_lang_id=ClassEnum.Fuel, collection_lang_id=CollectionEnum.Fuels, parent_name="ParentName")
 ```
-<div style="page-break-after: always;"></div>
+
 
 ### Properties
 ```python
@@ -259,8 +285,72 @@ data: Data = sdk.add_property(
 value: float = sdk.get_property_value(membership=membership, property_obj=property_obj)
 updated_data: Data = sdk.update_property(membership=membership, property_obj=property_obj, value=new_value)
 success: bool = sdk.remove_property(membership=membership, property_obj=property_obj)
+
+# Retrieve all Data rows for a membership+property (full property graph)
+all_data: List[Data] = sdk.get_property_data_all(membership=membership, property_obj=property_obj)
+
+# Retrieve a specific Data row by filter (e.g., by scenario)
+data: Data = sdk.get_property_data(membership=membership, property_obj=property_obj, scenario_tag=scenario_obj)
+
+# Bulk operations — add/update/delete across all memberships in a collection for a scenario
+added: int = sdk.bulk_add_property(ClassEnum.System, CollectionEnum.Generators, capacity_prop, 500.0, scenario_tag=scenario_obj)
+updated: int = sdk.bulk_update_property(scenario_obj, property_obj=capacity_prop, transform=lambda v: v * 1.1)  # +10%
+deleted: int = sdk.bulk_delete_property(scenario_obj, property_obj=capacity_prop)
 ```
-<div style="page-break-after: always;"></div>
+
+### Memos
+Memos attach free-text annotations to data records, memberships, or objects. They are added **after** the entity is created — memos are not part of `add_property` or `add_membership`.
+
+#### Data Memos
+Attach notes to individual property data rows (e.g., explaining why a value was chosen).
+```python
+# Add a data record first
+data: Data = sdk.add_property(membership, property_obj, 500.0)
+
+# Add memo to data -> returns MemoData (or None if memo already exists)
+memo: MemoData = sdk.add_memo_data(data=data, value="Based on 2024 capacity study")
+
+# Get memo -> returns MemoData or None
+memo: MemoData = sdk.get_memo_data(data=data)
+print(memo.value)  # "Based on 2024 capacity study"
+
+# Update memo -> returns MemoData or None
+updated_memo: MemoData = sdk.update_memo_data(data=data, value="Revised per Q3 review")
+
+# Remove memo -> returns bool
+success: bool = sdk.remove_memo_data(data=data)
+```
+
+#### Membership Memos
+Attach notes to parent-child relationships.
+```python
+# Add memo to membership -> returns MemoMembership (or None if exists)
+memo: MemoMembership = sdk.add_memo_membership(membership=membership, value="Primary fuel supply link")
+
+# Get, update, remove
+memo: MemoMembership = sdk.get_memo_membership(membership=membership)
+updated: MemoMembership = sdk.update_memo_membership(membership=membership, value="Updated note")
+success: bool = sdk.remove_memo_membership(membership=membership)
+```
+
+#### Object Memos (Custom Columns)
+Attach notes to objects using custom column definitions. Custom columns allow user-defined metadata fields on objects.
+```python
+from plexos_sdk.models.plexos_models import CustomColumn
+
+# Get or reference a custom column
+column: CustomColumn = CustomColumn.get(CustomColumn.name == "Notes")
+
+# Add memo to object+column -> returns MemoObject (or None if exists)
+memo: MemoObject = sdk.add_memo_object(object=generator_obj, column=column, value="Commissioned 2024")
+
+# Get, update, remove
+memo: MemoObject = sdk.get_memo_object(object=generator_obj, column=column)
+updated: MemoObject = sdk.update_memo_object(object=generator_obj, column=column, value="Decommission planned 2030")
+success: bool = sdk.remove_memo_object(object=generator_obj, column=column)
+```
+
+
 
 ### Report Configuration
 ```python
@@ -296,8 +386,36 @@ for reporting_lang_id in reporting_lang_ids:
         write_flat_files=False
     )
 
+# Convenience: create report, attach to model, and configure properties in one call
+report: Object = sdk.create_report(
+    model_obj=model,
+    report_name="My Report",
+    reporting_lang_ids=[
+        ReportingEnum_Generators.Generation,
+        ReportingEnum_Generators.GenerationCost,
+        ReportingEnum_Regions.Price,
+    ],
+    report_period=True,
+    report_summary=True,
+)
+
+# Batch configure reporting properties on an existing Report object -> returns List[Report]
+configs: List[Report] = sdk.configure_report_properties(
+    object_obj=report_object,
+    reporting_lang_ids=[ReportingEnum_Generators.Generation, ReportingEnum_Fuels.Cost],
+    phase_id=4,
+    report_period=True,
+    report_summary=True
+)
+
+# Query existing report configurations -> returns List[Report]
+existing: List[Report] = sdk.get_report_configurations(
+    object_obj=report_object,
+    reporting_lang_id=ReportingEnum_Generators.Generation,
+    phase_id=4  # Optional filter
+)
 ```
-<div style="page-break-after: always;"></div>
+
 
 ### Categories
 ```python
@@ -329,6 +447,25 @@ from datetime import datetime
 horizon: Object = sdk.create_horizon(
     name="2024 Monthly", date_from=datetime(2024, 1, 1), step_count=12, step_type=3, description="MonthlyHorizon for 2024")
 
+# With chronological parameters (for look-ahead/behind scheduling)
+horizon: Object = sdk.create_horizon(
+    name="2024 With Chrono",
+    date_from=datetime(2024, 1, 1), step_count=12, step_type=3,
+    chrono_date_from=datetime(2023, 12, 1),  # Look-behind start
+    chrono_step_count=14,                     # Extended chrono range
+    chrono_step_type=3                        # Monthly
+)
+
+# Get a specific horizon by name -> returns Object
+horizon: Object = sdk.get_horizon_by_name("2024 Monthly")
+
+# Update an existing horizon -> returns Object
+updated: Object = sdk.update_horizon(
+    horizon=horizon,
+    step_count=24,                            # Extend to 24 months
+    chrono_step_count=26                      # Extend chrono range
+)
+
 # List all horizons -> returns list of Objects
 horizons: List[Object] = sdk.list_all_horizons()
 ```
@@ -341,7 +478,7 @@ from plexos_sdk import to_oa_date, from_oa_date
 oa_date = to_oa_date(datetime(2024, 1, 1))
 dt = from_oa_date(44927.0)
 ```
-<div style="page-break-after: always;"></div>
+
 
 ## 🚀 Quick Start Example
 
@@ -397,27 +534,46 @@ with PLEXOSSDK("my_model.db") as sdk:
 ```
 
 > **Pro Tip:** For database creation and enum generation, see [Database Management](#-database-management) and [Enum Generation](#-enum-generation) sections.
-<div style="page-break-after: always;"></div>
+
 
 ## 🗄️ Database Management
 
-### Creating Databases
-#### Advanced feature to start a new empty database. 
-```python
-from plexos_sdk import SeedDataManager
+Most users will work with **existing PLEXOS databases** — either exported from PLEXOS Desktop or provided by their team. The SDK opens these databases directly and reads/writes model data.
 
-# Create new database using SQL-based seed data
-with SeedDataManager("source_database.db") as manager:
-    # Generate SQL scripts for all system types
-    results = manager.generate_seed_data_sql("sql_output/")
-    
-    # Create database from SQL script
-    manager.create_database("my_model.db", "electric", results["electric"])
+For users who need to **create new blank databases** programmatically (without PLEXOS Desktop), see [Seed Data Management](#-seed-data-management).
+
+### XML Conversion
+PLEXOS Desktop saves models as `.xml` files. The SDK works with `.db` (SQLite) files. Convert between formats:
+
+```bash
+# Convert PLEXOS XML to SQLite database
+plexos-sdk xml-to-db model.xml model.db
+plexos-sdk xml-to-db model.xml model.db --overwrite
+
+# Convert SQLite database back to PLEXOS XML
+plexos-sdk db-to-xml model.db model.xml
+plexos-sdk db-to-xml model.db model.xml --overwrite
+```
+
+```python
+# Open a PLEXOS XML file directly as an SDK instance
+with PLEXOSSDK.from_xml("model.xml", "model.db") as sdk:
+    # Work with the database — model.db is kept for future use
+    with sdk.transaction():
+        generator = sdk.add_object(ClassEnum.Generator, "WindFarm1")
+
+# Convert programmatically
+from plexos_sdk import XmlConverter
+converter = XmlConverter()
+converter.xml_to_db("model.xml", "model.db")
+converter.db_to_xml("model.db", "model.xml")
 ```
 
 ## 🎯 Enum Generation
 
-Generate type-safe enums for your domain to get better IDE support and validation.
+Enums provide type-safe identifiers for classes, collections, properties, and attributes — giving you IDE autocomplete, compile-time validation, and readable code instead of raw integer IDs.
+
+**Why generate instead of ship?** Enums are generated from **your** database because the available classes, properties, and attributes vary by PLEXOS version and domain (electric, gas, water, universal). The SDK supports all versions, so enums cannot be bundled — they must be generated to match the specific version and domain you are working with.
 
 ### Python API
 ```python
@@ -434,9 +590,8 @@ enums = generate_enums_from_database(
 from my_enums.electric_enums import ClassEnum, PropertyEnum_Generators
 generator = sdk.add_object(class_lang_id=ClassEnum.Generator, object_name="WindFarm1")
 ```
-<div style="page-break-after: always;"></div>
 
-### CLI Tools
+### CLI
 ```bash
 # Generate enums with auto-detected domain
 python -m plexos_sdk.enum_generator my_database.db --output enums/
@@ -447,68 +602,6 @@ python -m plexos_sdk.enum_generator my_database.db --domain electric --output en
 # Generate enums with analysis report
 python -m plexos_sdk.enum_generator my_database.db --domain gas --output enums/ --analysis
 ```
-
-## 🌱 Seed Data Management
-
-### SQL-Based Seed Data
-Modern approach using human-readable SQL scripts:
-
-```python
-from plexos_sdk import SeedDataManager
-
-# Extract seed data to SQL scripts
-with SeedDataManager("source_database.db") as manager:
-    # Generate SQL scripts for all system types
-    results = manager.generate_seed_data_sql("sql_output/")
-    
-    # Create database from SQL script
-    manager.create_database("new_model.db", "electric", results["electric"])
-```
-
-### Zip Package Management
-Create versioned zip files for distribution:
-
-```python
-from plexos_sdk import SeedDataManager
-
-# Generate zip package with SQL scripts
-with SeedDataManager("source_database.db") as manager:
-    manager.generate_seed_data_zip(
-        "seeddata.zip", 
-        ["electric", "gas", "water"], 
-        "11.03.75"
-    )
-    
-    # Create database from zip package
-    manager.create_database_from_zip(
-        "new_model.db", 
-        "seeddata.zip", 
-        "electric", 
-        "11.03.75"
-    )
-```
-
-## 🖥️ Command Line Tools
-
-```bash
-# Database creation
-plexos-sdk create-db my_model.db
-
-# SQL-based seed data (new approach)
-plexos-sdk extract-sql source.db sql_output/
-plexos-sdk create-from-sql source.db new_model.db electric
-plexos-sdk package-sql source.db seeddata.zip
-
-# Enum generation
-python -m plexos_sdk.enum_generator my_database.db --output enums/
-
-# List available sources
-plexos-sdk list-sources
-
-# Legacy commands (deprecated)
-plexos-sdk generate-seed-data source_path output.zip --overwrite
-```
-<div style="page-break-after: always;"></div>
 
 ## 🎯 Data Enums/Identifiers
 
@@ -548,14 +641,14 @@ collection: Collection = sdk.get_collection(parent_class_lang_id=ClassEnum.Gener
 collection: Collection = sdk.get_collection(parent_class_lang_id=ClassEnum.System, collection_lang_id=CollectionEnum.Generators)   # System → Generator
 ```
 
-<div style="page-break-after: always;"></div>
+
 
 ## 🔧 Error Handling
 
 ```python
 from plexos_sdk.exceptions import (
     ActionNotFoundError, InvalidObjectNameError, ObjectNotFoundError, SystemObjectError,
-    ClassNotFoundError, CollectionDisabledError, ValidationError,
+    ClassNotFoundError, CollectionNotFoundError, CollectionDisabledError, ValidationError,
     InvalidDateError, PropertyAlreadyExistsError, AttributeAlreadyExistsError,
     MembershipAlreadyExistsError, CategoryAlreadyExistsError,
     InvalidLangIdError, TextValidationError, TagValidationError,
@@ -599,7 +692,7 @@ except ActionNotFoundError as e:
 except ValidationError as e:
     print(f"Validation error: {e}")  # Error if action provided without expression_tag
 ```
-<div style="page-break-after: always;"></div>
+
 
 ## 📚 Common Patterns
 
@@ -678,8 +771,121 @@ with sdk.transaction():
     attr_data: AttributeData = sdk.add_attribute(object_obj=wind_farm_obj, attribute=max_output_attr, value=600.0)
 ```
 
-<div style="page-break-after: always;"></div>
 
+
+
+## 🌱 Seed Data Management
+
+> **Audience:** This is an advanced feature for users who want to create completely blank PLEXOS databases programmatically — a capability that was previously limited to PLEXOS Desktop. Most users (90%+) will work with existing versioned databases and can skip this section.
+
+### Why Seed Data?
+
+Every PLEXOS database requires a foundation of **system-defined metadata** — classes, collections, properties, attributes, and their relationships. This metadata defines what object types exist (Generators, Fuels, Regions, etc.), what properties they support, and how they relate to each other.
+
+This metadata is **version-specific**. PLEXOS 11.05.112 has different metadata than 11.03.75 — new properties, renamed collections, updated validation rules. When creating a blank database, the seed data must match the PLEXOS version the user will run simulations against. Using mismatched seed data can cause upgrade/downgrade issues when the database is opened in PLEXOS Desktop.
+
+### How Seed Data Is Produced
+
+Seed data is extracted from **blank PLEXOS databases** — one per system type. The SDK converts these into portable SQL scripts and packages them into a versioned zip file that ships with the SDK.
+
+**System types:** `electric`, `gas`, `water`, `universal`
+
+#### Step-by-Step: Building a Seed Data Package
+
+**Step 1 — Create source databases in PLEXOS Desktop**
+
+Open PLEXOS Desktop and create a new blank project for each system type. Save each as XML:
+- `electric.xml` — blank Electric project
+- `gas.xml` — blank Gas project
+- `water.xml` — blank Water project
+- `universal.xml` — blank Universal project
+
+**Step 2 — Convert XML files to SQLite databases**
+
+The database files **must be named** to match their system type exactly:
+```bash
+plexos-sdk xml-to-db electric.xml electric.db
+plexos-sdk xml-to-db gas.xml gas.db
+plexos-sdk xml-to-db water.xml water.db
+plexos-sdk xml-to-db universal.xml universal.db
+```
+
+**Step 3 — Package all databases into a versioned zip**
+
+Place all 4 `.db` files in one folder, then package them:
+```bash
+plexos-sdk package-sql C:\Data\seed_dbs\ seeddata/sdk_seed_data.zip
+```
+The PLEXOS version is auto-detected from the databases (e.g., `11.05.112`). The zip supports **multiple versions** — running this again with databases from a different PLEXOS version appends a new version folder to the existing zip.
+
+```bash
+# Override auto-detected version
+plexos-sdk package-sql C:\Data\seed_dbs\ seeddata/sdk_seed_data.zip --version 11.05.112
+
+# Replace an existing version in the zip
+plexos-sdk package-sql C:\Data\seed_dbs\ seeddata/sdk_seed_data.zip --overwrite-version
+```
+
+**Zip structure:**
+```
+sdk_seed_data.zip
+├── 11.05.112/
+│   ├── seed_data_electric.sql
+│   ├── seed_data_gas.sql
+│   ├── seed_data_water.sql
+│   ├── seed_data_universal.sql
+│   └── metadata.json
+├── 11.03.75/
+│   ├── seed_data_electric.sql
+│   ├── ...
+│   └── metadata.json
+└── package_metadata.json
+```
+
+### Creating Databases from Seed Data
+
+Once the seed data package exists, users can create new blank databases:
+
+```bash
+# Create a blank database (schema only, no seed data)
+plexos-sdk create-db my_database.db
+
+# Create a populated database from a source database's seed data
+plexos-sdk create-from-sql source.db new_model.db electric
+plexos-sdk create-from-sql source.db new_model.db electric --overwrite
+```
+
+```python
+from plexos_sdk import SeedDataManager
+
+# Extract seed data SQL scripts from a source database
+with SeedDataManager("source_database.db") as manager:
+    results = manager.generate_seed_data_sql("sql_output/")
+
+    # Create a new database from the extracted SQL
+    manager.create_database("new_model.db", "electric", results["electric"])
+
+# Or create directly from a versioned zip package
+with SeedDataManager("source_database.db") as manager:
+    manager.create_database_from_zip(
+        "new_model.db",
+        "seeddata/sdk_seed_data.zip",
+        "electric",
+        "11.05.112"  # Optional — defaults to newest version in zip
+    )
+```
+
+### Additional CLI Commands
+
+```bash
+# Extract seed data from a single database to SQL scripts
+plexos-sdk extract-sql source.db output_dir/
+plexos-sdk extract-sql source.db output_dir/ --system-types electric gas
+plexos-sdk extract-sql source.db output_dir/ --overwrite
+
+# Package from a single database (instead of a directory of 4)
+plexos-sdk package-sql source.db seeddata/sdk_seed_data.zip
+```
 
 ## ⚠️ Important Notes
 

@@ -1,333 +1,233 @@
-<!--This document must be kept up to date whenever changes to the SDK is made. The SDK is the source of truth. All public methods except for Core SDK Methods, Cache Management should be documented with accurate parameter names, ordinal placement and types -->
-# PLEXOS SDK Methods Reference
-
-This document lists all public methods available in the PLEXOS SDK with their type hints and parameters.
-
-## 🔄 Transaction Management
-
-### `transaction(savepoint_name: Optional[str] = None)`
-Create transaction context for data integrity.
-
-### `rollback()`
-Rollback current transaction.
-
-### `commit()`
-Commit current transaction.
-
-### `in_transaction() -> bool`
-Check if currently in a transaction.
-
-## 🎯 Object Management
-
-### `add_object(class_lang_id: int, object_name: str, category_obj: Optional[Category] = None, description: Optional[str] = None) -> Object`
-Add a new object to the database. System membership is automatically created.
-
-**Raises:**
-- `InvalidObjectNameError`: If object name is invalid
-- `InvalidClassIdError`: If class ID is invalid
-- `ObjectAlreadyExistsError`: If object already exists
-- `SystemObjectError`: If trying to create multiple System objects
-- `CategoryNotFoundError`: If category is not found
-
-### `get_object(object_id: int) -> Object`
-Get object by ID.
-
-**Raises:**
-- `ObjectNotFoundError`: If object is not found
-
-### `get_objects(class_lang_id: int) -> List[Object]`
-Get objects by class lang_id.
-
-### `get_object_by_name(class_lang_id: int, object_name: str) -> Object`
-Get object by name and class lang_id.
-
-**Raises:**
-- `InvalidObjectNameError`: If object name is invalid
-- `ObjectNotFoundError`: If object is not found
-
-### `remove_object_by_name(class_lang_id: int, object_name: str) -> bool`
-Remove object from the database by name and class lang_id.
-
-## 🔗 Membership Management
-
-### `add_membership(collection: Collection, parent: Object, child: Object) -> Membership`
-Add membership between parent and child objects.
-
-**Raises:**
-- `InvalidObjectClassError`: If parent or child class doesn't match collection
-- `MembershipAlreadyExistsError`: If membership already exists
-
-### `remove_membership_by_lang_id(parent_class_lang_id: int, collection_lang_id: int, parent_name: str, child_name: str) -> bool`
-Remove membership between parent and child objects using lang_id-based collection lookup.
-
-### `remove_membership(membership: Membership) -> bool`
-Remove membership using membership object.
-
-### `get_parent_members(parent_class_lang_id: int, collection_lang_id: int, child_name: str) -> List[Object]`
-Get parent members for a child object in a collection using deterministic collection lookup.
-
-### `get_child_members(parent_class_lang_id: int, collection_lang_id: int, parent_name: str) -> List[Object]`
-Get child members for a parent object in a collection using deterministic collection lookup.
-
-### `get_child_memberships(parent_class_lang_id: int, collection_lang_id: int, parent_name: str) -> List[Membership]`
-Get child memberships for a parent object in a collection using deterministic collection lookup.
-
-### `get_membership_by_child_name(parent_class_lang_id: int, collection_lang_id: int, parent_name: str, child_name: str) -> Membership`
-Get membership by child name in a collection using deterministic collection lookup.
-
-**Raises:**
-- `MembershipNotFoundError`: If membership is not found
-
-### `get_membership_by_names(parent_class_lang_id: int, collection_lang_id: int, parent_name: str, child_name: str) -> Membership`
-Get membership by parent class, collection, and object names for determinism.
-
-**Raises:**
-- `MembershipNotFoundError`: If membership is not found
-
-### `get_object_parent_memberships(class_lang_id: int, object_name: str) -> List[Membership]`
-Get all parent memberships for an object by name and class lang_id.
-
-### `get_object_child_memberships(class_lang_id: int, object_name: str) -> List[Membership]`
-Get all child memberships for an object by name and class lang_id.
-
-### `get_object_all_memberships(class_lang_id: int, object_name: str) -> List[Membership]`
-Get all memberships (parent and child) for an object by name and class lang_id.
-
-### `get_object_membership_count(class_lang_id: int, object_name: str) -> dict`
-Get membership count for an object by name and class lang_id.
-
-### `get_memberships_by_collection(parent_class_lang_id: int, collection_lang_id: int) -> List[Membership]`
-Get all memberships for a collection by parent class and collection lang_id for determinism.
-
-## 📝 Category Management
-
-### `add_category(class_lang_id: int, category_name: str, description: Optional[str] = None) -> Category`
-Add a new category for a class.
-
-**Raises:**
-- `InvalidObjectNameError`: If category name is invalid
-- `CategoryAlreadyExistsError`: If category already exists
-
-### `remove_category(class_lang_id: int, category_name: str) -> bool`
-Remove a category from a class.
-
-### `get_categories(class_lang_id: int) -> List[Category]`
-Get all categories for a class.
-
-### `add_object_category(class_lang_id: int, object_name: str, category_name: str) -> bool`
-Add an object to a category.
-
-### `get_objects_in_category(class_lang_id: int, category_name: str) -> List[Object]`
-Get all objects in a category.
-
-### `get_category_by_name(class_lang_id: int, category_name: str) -> Category`
-Get category by name for a class.
-
-**Raises:**
-- `CategoryNotFoundError`: If category is not found
-
-## ⚙️ Property Management
-
-### `add_property(membership: Membership, property_obj: Property, value: Optional[float] = None, *, data_file_text: Optional[str] = None, time_slice_text: Optional[str] = None, data_file_tag: Optional[Object] = None, scenario_tag: Optional[Object] = None, expression_tag: Optional[Object] = None, band_id: int = 1, period_type_id: Optional[int] = None, date_from: Optional[str] = None, date_to: Optional[str] = None, action: Optional[Union[Action, str]] = None) -> Data`
-Add property to membership with strongly typed parameters and optional text/tag creation. Returns hydrated Data object.
-
-**Important Notes:**
-- **Actions**: The `action` parameter applies only to `expression_tag` (Variable tags). Scenario tags and Data File tags never receive actions.
-- **Automatic Property Configuration**: When `expression_tag` is provided, the SDK automatically:
-  - Enables the property (`is_enabled=1`) if not already enabled
-  - Sets `is_dynamic=1` to ensure tagged properties display correctly in PLEXOS Desktop
-- **Action Specification**: Actions can be provided as Action objects or action_symbol strings (e.g., "×", "FuelPriceMultiplier")
-
-**Raises:**
-- `ActionNotFoundError`: If action symbol is provided but action is not found in database
-- `ValidationError`: If action is provided but `expression_tag` is not provided
-
-### `get_property_value(membership: Membership, property_obj: Property, band_id: int = 1) -> Optional[float]`
-Get property value for membership.
-
-### `remove_property(membership: Membership, property_obj: Property, band_id: int = 1) -> bool`
-Remove property from membership.
-
-### `update_property(membership: Membership, property_obj: Property, value: float, band_id: int = 1, period_type_id: int = None) -> Data`
-Update property value for membership.
-
-### `get_property_values_with_bands(membership: Membership, property_obj: Property) -> List[tuple[float, int]]`
-Get all property values with their band IDs for a membership.
-
-### `get_properties_by_collection(parent_class_lang_id: int, collection_lang_id: int) -> List[Property]`
-Get properties by parent class lang_id and collection lang_id for determinism.
-
-### `get_properties_on_membership(membership_id: int) -> List[Property]`
-Get properties on a specific membership.
-
-### `get_enabled_properties() -> List[str]`
-Get all enabled properties.
-
-### `get_enabled_properties_for_collection(parent_class_lang_id: int, collection_lang_id: int) -> List[Property]`
-Get enabled properties for a collection by parent class and collection lang_id for determinism.
-
-## 🔧 Attribute Management
-
-### `add_attribute(object_obj: Object, attribute: Attribute, value: float) -> AttributeData`
-Add attribute to object using attribute object.
-
-### `add_attribute_by_lang_id(object_obj: Object, attribute_lang_id: int, value: float) -> AttributeData`
-Add attribute to object using lang_id.
-
-### `remove_attribute(object_obj: Object, attribute: Attribute) -> bool`
-Remove attribute from object.
-
-### `update_attribute(object_obj: Object, attribute: Attribute, value: float) -> AttributeData`
-Update attribute value on object.
-
-### `get_attribute_value(object_obj: Object, attribute: Attribute) -> Optional[float]`
-Get attribute value from object.
-
-### `get_attribute_value_by_ids(class_lang_id: int, object_name: str, attribute_lang_id: int) -> Optional[float]`
-Get attribute value by class lang_id, object name, and attribute lang_id.
-
-### `get_enabled_attributes_for_class(class_lang_id: int) -> List[Attribute]`
-Get enabled attributes for a specific class.
-
-## ⏰ Time Management (Horizons)
-
-### `create_horizon(name: str, date_from: datetime, step_count: int, step_type: int, description: Optional[str] = None, chrono_date_from: Optional[datetime] = None, chrono_step_count: Optional[int] = None, chrono_step_type: Optional[int] = None) -> Object`
-Create a new horizon with essential parameters.
-
-### `update_horizon(horizon: Object, date_from: Optional[datetime] = None, step_count: Optional[int] = None, step_type: Optional[int] = None, chrono_date_from: Optional[datetime] = None, chrono_step_count: Optional[int] = None, chrono_step_type: Optional[int] = None) -> Object`
-Update horizon parameters as a unit of work.
-
-### `get_horizon_by_name(name: str) -> Object`
-Get horizon by name.
-
-**Raises:**
-- `ObjectNotFoundError`: If horizon is not found
-
-### `list_all_horizons() -> List[Object]`
-Get all horizons in the model.
-
-## 📊 Report Configuration
-
-### `add_report_configuration(object_obj: Object, reporting_lang_id: int, phase_id: int, report_period: bool, report_samples: bool, report_statistics: bool, report_summary: bool, write_flat_files: bool) -> Report`
-Add a report configuration for an object-reporting property-phase combination.
-
-### `get_report_configurations(object_obj: Object, reporting_lang_id: int, phase_id: Optional[int] = None) -> List[Report]`
-Get report configurations for an object-reporting property combination.
-
-### `configure_report_properties(object_obj: Object, reporting_lang_ids: List[int], phase_id: int = 4, report_period: bool = True, report_samples: bool = False, report_statistics: bool = False, report_summary: bool = True, write_flat_files: bool = False) -> List[Report]`
-Configure multiple reporting properties for a Report object.
-
-## 📝 Memo Operations
-
-### `get_memo_data(data: Data) -> Optional[MemoData]`
-Get memo for data record.
-
-### `add_memo_data(data: Data, value: str) -> Optional[MemoData]`
-Add memo to data record.
-
-### `update_memo_data(data: Data, value: str) -> Optional[MemoData]`
-Update memo value for data record.
-
-### `remove_memo_data(data: Data) -> bool`
-Remove memo from data record.
-
-### `get_memo_membership(membership: Membership) -> Optional[MemoMembership]`
-Get memo for membership record.
-
-### `add_memo_membership(membership: Membership, value: str) -> Optional[MemoMembership]`
-Add memo to membership record.
-
-### `update_memo_membership(membership: Membership, value: str) -> Optional[MemoMembership]`
-Update memo value for membership record.
-
-### `remove_memo_membership(membership: Membership) -> bool`
-Remove memo from membership record.
-
-### `get_memo_object(object: Object, column: CustomColumn) -> Optional[MemoObject]`
-Get memo for object and custom column combination.
-
-### `add_memo_object(object: Object, column: CustomColumn, value: str) -> Optional[MemoObject]`
-Add memo to object and custom column combination.
-
-### `update_memo_object(object: Object, column: CustomColumn, value: str) -> Optional[MemoObject]`
-Update memo value for object and custom column combination.
-
-### `remove_memo_object(object: Object, column: CustomColumn) -> bool`
-Remove memo from object and custom column combination.
-
-## 🔍 Lang ID Helper Methods
-
-### `get_class(class_lang_id: int) -> Class` 
-Get Class object by class_lang_id.
-
-**Raises:**
-- `ClassNotFoundError`: If class is not found
-
-### `get_collection(parent_class_lang_id: int, collection_lang_id: int) -> Collection`
-Get Collection object by parent_class_lang_id and collection_lang_id.
-
-**Raises:**
-- `CollectionNotFoundError`: If collection is not found
-
-### `get_property(parent_class_lang_id: int, collection_lang_id: int, property_lang_id: int) -> Property`
-Get Property object by parent_class_lang_id, collection_lang_id, and property_lang_id for determinism.
-
-**Raises:**
-- `PropertyNotFoundError`: If property is not found
-
-### `get_attribute(class_lang_id: int, attribute_lang_id: int) -> Attribute`
-Get Attribute object by class_lang_id and attribute_lang_id.
-
-**Raises:**
-- `AttributeNotFoundError`: If attribute is not found
-
-## 🛠️ Utility Methods
-
-### `validate_value_by_rule(value: float, validation_rule: str) -> ValidationResult`
-Validate value using a validation rule.
-
-### `to_oa_date(dt: datetime) -> float`
-Convert Python datetime to PLEXOS OA date format.
-
-### `from_oa_date(oa_date: Union[float, int]) -> datetime`
-Convert PLEXOS OA date format to Python datetime.
-
-### `refresh_cache(cache_type: str = None) -> None`
-Refresh cache for specified type or all caches if no type specified.
-
-
-## 🌱 Seed Data Management
-
-### `SQLSeedDataExtractor(source_database_path: str)`
-Extract seed data from PLEXOS databases and generate SQL scripts or zip packages.
-
-**Methods:**
-- `extract_to_sql(output_path: str, system_type: str = 'universal', version: Optional[str] = None, overwrite: bool = False) -> str`
-- `extract_all_system_types(output_directory: str, version: Optional[str] = None, overwrite: bool = False) -> Dict[str, str]`
-- `create_seed_data_zip(output_zip_path: str, system_types: List[str] = None, version: Optional[str] = None, overwrite: bool = False) -> str`
-
-### `SQLDatabaseCreator(schema_path: Optional[str] = None)`
-Create PLEXOS databases from SQL scripts or zip packages.
-
-**Methods:**
-- `create_blank_database(output_path: str) -> str`
-- `populate_with_sql(database_path: str, sql_script_path: str) -> None`
-- `create_database_from_sql(output_path: str, sql_script_path: str, overwrite: bool = False) -> str`
-- `create_database_from_zip(output_path: str, zip_path: str, system_type: str, version: str, overwrite: bool = False) -> str`
-
-### `SQLSeedDataPackager()`
-Package SQL scripts into versioned zip files for distribution.
-
-**Methods:**
-- `package_sql_scripts(sql_files: Dict[str, str], output_zip_path: str, version: str, metadata: Optional[Dict[str, Any]] = None, overwrite: bool = False) -> str`
-- `extract_from_zip(zip_path: str, output_directory: str, version: Optional[str] = None, system_types: Optional[List[str]] = None) -> Dict[str, str]`
-
-### `SeedDataManager(source_database_path: str)`
-High-level interface for SQL-based seed data operations.
-
-**Methods:**
-- `generate_seed_data_sql(output_directory: str, system_types: List[str] = None, version: Optional[str] = None, overwrite: bool = False) -> Dict[str, str]`
-- `create_database(output_path: str, system_type: str, sql_script_path: str, overwrite: bool = False) -> str`
-- `create_database_from_zip(output_path: str, zip_path: str, system_type: str, version: str, overwrite: bool = False) -> str`
-- `generate_seed_data_zip(output_zip_path: str, system_types: List[str] = None, version: Optional[str] = None, overwrite: bool = False) -> str`
-
+# PLEXOS SDK
+
+## Notation
+
+### Basic Types
+s=string
+i=integer
+f=float
+b=boolean
+dt=datetime
+*=any type
+[]=array/list
+
+### Markers & Constraints
+!=required parameter
+?=optional parameter
++=non-empty array/list
+==default value
+(a|b)=enumeration
+[x|y]=exclusive parameters (only one allowed)
+(x+y)=parameters must be used together
+->returns specific type
+<-=value derived from operation
+
+### Core Model Hierarchy & Relationships
+
+#### Primary Models
+Object{object_id:i,name:s,class_ref:Class{},category:Category{}?,description:s?,unique_id:s,x:i?,y:i?,z:i?}
+Class{class_id:i,name:s,lang_id:i,is_enabled:b,description:s?,class_group:ClassGroup{}?,inherits_from:i?}
+ClassGroup{class_group_id:i,name:s,lang_id:i}
+Category{category_id:i,name:s,rank:i,class_ref:Class{}}
+Collection{collection_id:i,name:s,lang_id:i,is_enabled:b,parent_class:Class{},child_class:Class{},is_one_to_many:b,min_count:i?,max_count:i?,description:s?}
+
+#### Relationship Models
+Membership{membership_id:i,parent_object:Object{},child_object:Object{},collection:Collection{},parent_class:Class{}?,child_class:Class{}?}
+Property{property_id:i,name:s,lang_id:i,collection:Collection{},is_enabled:b,is_multi_band:b,is_dynamic:b,is_key:b,default_value:f?,validation_rule:s?,unit:Unit{}?,property_group:PropertyGroup{}?,max_band_id:i?,period_type_id:i?}
+Attribute{attribute_id:i,name:s,lang_id:i,class_ref:Class{},is_enabled:b,is_integer:b,default_value:f?,validation_rule:s?,unit:Unit{}?}
+
+#### Data Models
+Data{data_id:i,value:f,uid:i?,membership:Membership{},property_ref:Property{}}
++Band{data_id:i,band_id:i}?,DateFrom{data_id:i,date:s}?,DateTo{data_id:i,date:s}?,MemoData{data_id:i,value:s}?,Text{data_id:i,class_id:i,value:s}[]?,Tag{data_id:i,object_id:i}[]?
+
+AttributeData{object_id:i,attribute_id:i,value:f} #composite_key
+
+#### Supporting Models
+Unit{unit_id:i,value:s,description:s?,default:s?,imperial_energy:s?,metric_level:s?}
+PropertyGroup{property_group_id:i,name:s,lang_id:i}
+Action{action_id:i,action_symbol:s}
+CustomColumn{column_id:i,name:s,position:i,class_ref:Class{},unique_id:s}
+
+#### Memo/Report Models
+MemoData{data_id:i,value:s},MemoMembership{membership_id:i,value:s},MemoObject{object_id:i,column_id:i,value:s} #composite_key
+Report{object_id:i,property_id:i,phase_id:i,report_period:b,report_samples:b,report_statistics:b,report_summary:b,write_flat_files:b} #composite_key
+
+### Patterns
+Context: with PLEXOSSDK(db_path:(s|Path)!) as sdk
+Transactions: with sdk.transaction() #required_for_writes
+Returns: Hydrated Peewee models with relationships loaded
+Auto-creates: Text,Tag,Band,DateFrom,DateTo when params provided
+
+## Core SDK Methods
+
+# Initialize SDK with database connection
+PLEXOSSDK(database_path:(s|Path)!)->context_manager
+PLEXOSSDK.from_xml(xml_path:(s|Path)!,db_path:(s|Path)!)->PLEXOSSDK
+
+# XML conversion
+XmlConverter.xml_to_db(xml_path:s!,db_path:s!,overwrite:b=False)->s
+XmlConverter.db_to_xml(db_path:s!,xml_path:s!,overwrite:b=False)->s
+
+# Transaction management for data integrity
+transaction(savepoint_name:s?)->context_manager
+rollback()->None
+commit()->None
+in_transaction()->b
+
+# Object operations
+add_object(class_lang_id:i!,object_name:s!,category_obj:Category?,description:s?)->Object
+get_object(object_id:i!)->Object
+get_objects(class_lang_id:i!)->Object[]
+get_object_by_name(class_lang_id:i!,object_name:s!)->Object
+remove_object_by_name(class_lang_id:i!,object_name:s!)->b
+
+# Membership operations
+add_membership(collection:Collection!,parent:Object!,child:Object!)->Membership
+remove_membership_by_lang_id(parent_class_lang_id:i!,collection_lang_id:i!,parent_name:s!,child_name:s!)->b
+remove_membership(membership:Membership!)->b
+get_parent_members(parent_class_lang_id:i!,collection_lang_id:i!,child_name:s!)->Object[]
+get_child_members(parent_class_lang_id:i!,collection_lang_id:i!,parent_name:s!)->Object[]
+get_child_memberships(parent_class_lang_id:i!,collection_lang_id:i!,parent_name:s!)->Membership[]
+get_membership_by_child_name(parent_class_lang_id:i!,collection_lang_id:i!,parent_name:s!,child_name:s!)->Membership
+get_membership_by_names(parent_class_lang_id:i!,collection_lang_id:i!,parent_name:s!,child_name:s!)->Membership
+get_object_parent_memberships(class_lang_id:i!,object_name:s!)->Membership[]
+get_object_child_memberships(class_lang_id:i!,object_name:s!)->Membership[]
+get_object_all_memberships(class_lang_id:i!,object_name:s!)->Membership[]
+get_object_membership_count(class_lang_id:i!,object_name:s!)->dict
+get_memberships_by_collection(parent_class_lang_id:i!,collection_lang_id:i!)->Membership[]
+
+# Property operations
+add_property(membership:Membership!,property_obj:Property!,value:f?,data_file_text:s?,time_slice_text:s?,data_file_tag:Object?,scenario_tag:Object?,expression_tag:Object?,band_id:i=1,period_type_id:i?,date_from:s?,date_to:s?,action:(Action|s)?)->Data
+get_property_value(membership:Membership!,property_obj:Property!,band_id:i=1)->f?
+remove_property(membership:Membership!,property_obj:Property!,band_id:i=1)->b
+update_property(membership:Membership!,property_obj:Property!,value:f!,band_id:i=1,period_type_id:i?)->Data
+get_property_values_with_bands(membership:Membership!,property_obj:Property!)->(f,i)[]
+get_property_data_all(membership:Membership!,property_obj:Property!)->Data[]
+get_property_data(membership:Membership!,property_obj:Property!,scenario_tag:Object?,expression_tag:Object?,data_file_tag:Object?,band_id:i?,date_from:s?,date_to:s?)->Data?
+bulk_add_property(parent_class_lang_id:i!,collection_lang_id:i!,property_obj:Property!,value:f!,scenario_tag:Object!,band_id:i=1,date_from:s?,date_to:s?)->i
+bulk_update_property(scenario_tag:Object!,parent_class_lang_id:i?,collection_lang_id:i?,property_obj:Property?,value:f?,transform:Callable?)->i
+bulk_delete_property(scenario_tag:Object!,parent_class_lang_id:i?,collection_lang_id:i?,property_obj:Property?)->i
+get_properties_by_collection(parent_class_lang_id:i!,collection_lang_id:i!)->Property[]
+get_properties_on_membership(membership_id:i!)->Property[]
+get_enabled_properties()->s[]
+get_enabled_properties_for_collection(parent_class_lang_id:i!,collection_lang_id:i!)->Property[]
+
+# Attribute operations
+add_attribute(object_obj:Object!,attribute:Attribute!,value:f!)->AttributeData
+add_attribute_by_lang_id(object_obj:Object!,attribute_lang_id:i!,value:f!)->AttributeData
+remove_attribute(object_obj:Object!,attribute:Attribute!)->b
+update_attribute(object_obj:Object!,attribute:Attribute!,value:f!)->AttributeData
+get_attribute_value(object_obj:Object!,attribute:Attribute!)->f?
+get_attribute_value_by_ids(class_lang_id:i!,object_name:s!,attribute_lang_id:i!)->f?
+get_enabled_attributes_for_class(class_lang_id:i!)->Attribute[]
+
+# Category operations
+add_category(class_lang_id:i!,category_name:s!,description:s?)->Category
+remove_category(class_lang_id:i!,category_name:s!)->b
+get_categories(class_lang_id:i!)->Category[]
+add_object_category(class_lang_id:i!,object_name:s!,category_name:s!)->b
+get_objects_in_category(class_lang_id:i!,category_name:s!)->Object[]
+get_category_by_name(class_lang_id:i!,category_name:s!)->Category
+
+# Time management (Horizons)
+create_horizon(name:s!,date_from:dt!,step_count:i!,step_type:i!,description:s?,chrono_date_from:dt?,chrono_step_count:i?,chrono_step_type:i?)->Object
+update_horizon(horizon:Object!,date_from:dt?,step_count:i?,step_type:i?,chrono_date_from:dt?,chrono_step_count:i?,chrono_step_type:i?)->Object
+get_horizon_by_name(name:s!)->Object
+list_all_horizons()->Object[]
+
+# Report configuration
+add_report_configuration(object_obj:Object!,reporting_lang_id:i!,phase_id:i!,report_period:b!,report_samples:b!,report_statistics:b!,report_summary:b!,write_flat_files:b!)->Report
+get_report_configurations(object_obj:Object!,reporting_lang_id:i!,phase_id:i?)->Report[]
+configure_report_properties(object_obj:Object!,reporting_lang_ids:i[]!,phase_id:i=4,report_period:b=True,report_samples:b=False,report_statistics:b=False,report_summary:b=True,write_flat_files:b=False)->Report[]
+create_report(model_obj:Object!,report_name:s!,reporting_lang_ids:i[]!,phase_id:i=4,report_period:b=True,report_samples:b=False,report_statistics:b=False,report_summary:b=True,write_flat_files:b=False)->Object
+
+# Memo operations
+get_memo_data(data:Data!)->MemoData?
+add_memo_data(data:Data!,value:s!)->MemoData?
+update_memo_data(data:Data!,value:s!)->MemoData?
+remove_memo_data(data:Data!)->b
+get_memo_membership(membership:Membership!)->MemoMembership?
+add_memo_membership(membership:Membership!,value:s!)->MemoMembership?
+update_memo_membership(membership:Membership!,value:s!)->MemoMembership?
+remove_memo_membership(membership:Membership!)->b
+get_memo_object(object:Object!,column:CustomColumn!)->MemoObject?
+add_memo_object(object:Object!,column:CustomColumn!,value:s!)->MemoObject?
+update_memo_object(object:Object!,column:CustomColumn!,value:s!)->MemoObject?
+remove_memo_object(object:Object!,column:CustomColumn!)->b
+
+# Lang ID helpers
+get_class(class_lang_id:i!)->Class
+get_collection(parent_class_lang_id:i!,collection_lang_id:i!)->Collection
+get_property(parent_class_lang_id:i!,collection_lang_id:i!,property_lang_id:i!)->Property
+get_attribute(class_lang_id:i!,attribute_lang_id:i!)->Attribute
+
+# Utility methods
+validate_value_by_rule(value:f!,validation_rule:s!)->ValidationResult
+to_oa_date(dt:dt!)->f
+from_oa_date(oa_date:(f|i)!)->dt
+refresh_cache(cache_type:s?)->None
+
+## Seed Data Management Classes
+
+# SQL-based seed data extraction
+SQLSeedDataExtractor(source_database_path:s!)
+extract_to_sql(output_path:s!,system_type:s="universal",version:s?,overwrite:b=False)->s
+extract_all_system_types(output_directory:s!,version:s?,overwrite:b=False)->dict[s,s]
+create_seed_data_zip(output_zip_path:s!,system_types:s[]?,version:s?,overwrite:b=False)->s
+
+# Database creation from SQL
+SQLDatabaseCreator(schema_path:s?)
+create_blank_database(output_path:s!)->s
+populate_with_sql(database_path:s!,sql_script_path:s!)->None
+create_database_from_sql(output_path:s!,sql_script_path:s!,overwrite:b=False)->s
+create_database_from_zip(output_path:s!,zip_path:s!,system_type:s!,version:s?,overwrite:b=False)->s
+
+# SQL script packaging
+SQLSeedDataPackager()
+package_sql_scripts(sql_files:dict[s,s]!,output_zip_path:s!,version:s!,metadata:dict[s,*]?,overwrite:b=False)->s
+extract_from_zip(zip_path:s!,output_directory:s!,version:s?,system_types:s[]?)->dict[s,s]
+
+# High-level seed data management
+SeedDataManager(source_database_path:s!)
+generate_seed_data_sql(output_directory:s!,system_types:s[]?,version:s?,overwrite:b=False)->dict[s,s]
+create_database(output_path:s!,system_type:s!,sql_script_path:s!,overwrite:b=False)->s
+create_database_from_zip(output_path:s!,zip_path:s!,system_type:s!,version:s?,overwrite:b=False)->s
+generate_seed_data_zip(output_zip_path:s!,system_types:s[]?,version:s?,overwrite:b=False)->s
+
+## Common Exceptions
+InvalidObjectNameError: Object name validation failed
+ObjectNotFoundError: Object not found by name/ID
+SystemObjectError: Multiple System objects not allowed
+CategoryNotFoundError: Category not found
+MembershipAlreadyExistsError: Membership already exists
+PropertyAlreadyExistsError: Property already exists on membership
+AttributeAlreadyExistsError: Attribute already exists on object
+InvalidDateError: Date format validation failed (use ISO: "2024-01-01T00:00:00")
+ValidationError: Value validation against rule failed
+ClassNotFoundError: Class not found by lang_id
+CollectionNotFoundError: Collection not found by lang_id
+PropertyNotFoundError: Property not found by lang_id
+AttributeNotFoundError: Attribute not found by lang_id
+ActionNotFoundError: Action not found by action_symbol
+
+## Example
+```python
+from plexos_sdk import PLEXOSSDK
+from electric_enums import ClassEnum, CollectionEnum, PropertyEnum_Generators
+
+with PLEXOSSDK("model.db") as sdk:
+    with sdk.transaction():
+        category = sdk.get_category_by_name(ClassEnum.Generator, "Wind")
+        gen = sdk.add_object(ClassEnum.Generator, "WindFarm1", category_obj=category)
+        membership = sdk.get_membership_by_child_name(ClassEnum.System, CollectionEnum.Generators, "System", "WindFarm1")
+
+        # Auto-creates Text[], DateFrom, DateTo
+        data = sdk.add_property(membership, capacity_prop, 500.0,
+            data_file_text="wind_capacity.csv", time_slice_text="M1-6",
+            date_from="2024-01-01T00:00:00", date_to="2024-12-31T00:00:00")
+
+        attr_data = sdk.add_attribute_by_lang_id(gen, AttributeEnum_Generator.MaxOutput, 600.0)
+
+        # Access via hydrated models
+        print(data.property_ref.name, data.membership.collection.name)
+```
