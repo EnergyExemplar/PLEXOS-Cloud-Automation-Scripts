@@ -97,7 +97,7 @@ get_object_membership_count(class_lang_id:i!,object_name:s!)->dict
 get_memberships_by_collection(parent_class_lang_id:i!,collection_lang_id:i!)->Membership[]
 
 # Property operations
-add_property(membership:Membership!,property_obj:Property!,value:f?,data_file_text:s?,time_slice_text:s?,data_file_tag:Object?,scenario_tag:Object?,expression_tag:Object?,band_id:i=1,period_type_id:i?,date_from:s?,date_to:s?,action:(Action|s)?)->Data
+add_property(membership:Membership!,property_obj:Property!,value:f?,data_file_text:s?,time_slice_text:s?,expression_text:s?,data_file_tag:Object?,scenario_tag:Object?,expression_tag:Object?,band_id:i=1,period_type_id:i?,date_from:s?,date_to:s?,action:(Action|s)?)->Data
 get_property_value(membership:Membership!,property_obj:Property!,band_id:i=1)->f?
 remove_property(membership:Membership!,property_obj:Property!,band_id:i=1)->b
 update_property(membership:Membership!,property_obj:Property!,value:f!,band_id:i=1,period_type_id:i?)->Data
@@ -161,6 +161,9 @@ get_collection(parent_class_lang_id:i!,collection_lang_id:i!)->Collection
 get_property(parent_class_lang_id:i!,collection_lang_id:i!,property_lang_id:i!)->Property
 get_attribute(class_lang_id:i!,attribute_lang_id:i!)->Attribute
 
+# Enum generation
+generate_enums(output_dir:(s|Path)?=None,domain_name:s?,save_analysis:b=False)->s
+
 # Utility methods
 validate_value_by_rule(value:f!,validation_rule:s!)->ValidationResult
 to_oa_date(dt:dt!)->f
@@ -213,7 +216,7 @@ ActionNotFoundError: Action not found by action_symbol
 ## Example
 ```python
 from plexos_sdk import PLEXOSSDK
-from electric_enums import ClassEnum, CollectionEnum, PropertyEnum_Generators
+from plexos_sdk.enums.system_enums import ClassEnum, CollectionEnum, PropertyEnum_Generators
 
 with PLEXOSSDK("model.db") as sdk:
     with sdk.transaction():

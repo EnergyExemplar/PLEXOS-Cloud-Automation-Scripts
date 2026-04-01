@@ -113,8 +113,10 @@ if data.tags:
 from plexos_sdk import PLEXOSSDK
 from plexos_sdk.models.plexos_models import * # access to all classes
 from plexos_sdk.exceptions import * # access to any custom exceptions
-#domain/version specific enum.py file
-from electric_enums import * # access to ENUMS
+# Shipped with package (electric domain, latest version)
+from plexos_sdk.enums.system_enums import * # access to ENUMS
+# Or regenerate from your own database (replaces shipped file, no import change):
+# sdk.generate_enums()
 
 # Connect to database (accepts str or Path)
 with PLEXOSSDK("my_model.db") as sdk:
@@ -237,23 +239,24 @@ data: Data = sdk.add_property(
     date_to="2030-12-31T00:00:00"
 )
 
-# With text creation
+# With text creation (writes to t_text with appropriate class_id)
 data: Data = sdk.add_property(
     membership=membership, 
     property_obj=property_obj, 
     value=500.0,
     data_file_text="path/to/data.csv",
-    time_slice_text="M7-12"  # July-December
+    time_slice_text="M7-12",  # July-December
+    expression_text="x * 1.5"  # Expression text (Variable class)
 )
 
-# With tags
+# With tags (writes to t_tag referencing existing objects)
 data: Data = sdk.add_property(
     membership=membership, 
     property_obj=property_obj, 
     value=500.0,
     data_file_tag=data_file_obj,
     scenario_tag=scenario_obj,
-    expression_tag=variable_obj
+    expression_tag=variable_obj  # mutually exclusive with expression_text
 )
 
 # Method 1: Lookup action first (recommended for bulk operations)
@@ -486,7 +489,7 @@ Complete workflow using core SDK functionality:
 
 ```python
 from plexos_sdk import PLEXOSSDK
-from electric_enums import ClassEnum, CollectionEnum, PropertyEnum_Generators, AttributeEnum_Generator
+from plexos_sdk.enums.system_enums import ClassEnum, CollectionEnum, PropertyEnum_Generators, AttributeEnum_Generator
 from datetime import datetime
 
 # Work with existing database
@@ -573,34 +576,32 @@ converter.db_to_xml("model.db", "model.xml")
 
 Enums provide type-safe identifiers for classes, collections, properties, and attributes — giving you IDE autocomplete, compile-time validation, and readable code instead of raw integer IDs.
 
-**Why generate instead of ship?** Enums are generated from **your** database because the available classes, properties, and attributes vary by PLEXOS version and domain (electric, gas, water, universal). The SDK supports all versions, so enums cannot be bundled — they must be generated to match the specific version and domain you are working with.
-
-### Python API
+**Shipped default:** The SDK ships with `system_enums.py` for the electric domain (latest version). Use it directly — no generation step needed:
 ```python
-from plexos_sdk import generate_enums_from_database
-
-# Generate enums from your database
-enums = generate_enums_from_database(
-    database_path="my_database.db",
-    domain_name="electric",
-    output_dir="my_enums/"
-)
-
-# Use generated enums
-from my_enums.electric_enums import ClassEnum, PropertyEnum_Generators
-generator = sdk.add_object(class_lang_id=ClassEnum.Generator, object_name="WindFarm1")
+from plexos_sdk.enums.system_enums import ClassEnum, CollectionEnum, PropertyEnum_Generators
 ```
 
-### CLI
+**Regenerate for your version/domain:** If your PLEXOS version differs or you use a different domain (gas, water, universal), regenerate from your own database. The output is always `system_enums.py` so import statements stay the same.
+
+### From SDK (preferred — no separate step)
+```python
+from plexos_sdk.enums.system_enums import ClassEnum, PropertyEnum_Generators
+
+with PLEXOSSDK("my_database.db") as sdk:
+    sdk.generate_enums()  # replaces shipped enums with your database's version
+    # Same import above now reflects your version/domain — no changes needed
+```
+
+### From CLI
 ```bash
-# Generate enums with auto-detected domain
-python -m plexos_sdk.enum_generator my_database.db --output enums/
+# Generate system_enums.py with auto-detected domain
+plexos-sdk generate-enums my_database.db --output ./
 
-# Generate enums for specific domain
-python -m plexos_sdk.enum_generator my_database.db --domain electric --output enums/
+# Generate for specific domain
+plexos-sdk generate-enums my_database.db --domain gas --output ./
 
-# Generate enums with analysis report
-python -m plexos_sdk.enum_generator my_database.db --domain gas --output enums/ --analysis
+# Generate with analysis report
+plexos-sdk generate-enums my_database.db --domain gas --output ./ --analysis
 ```
 
 ## 🎯 Data Enums/Identifiers
@@ -608,8 +609,8 @@ python -m plexos_sdk.enum_generator my_database.db --domain gas --output enums/ 
 The SDK supports enums for better developer experience. Import domain-specific enums for type safety and IDE support.
 
 ```python
-# Import domain-specific enums
-from electric_enums import ClassEnum, CollectionEnum, PropertyEnum_Generators, PropertyEnum_Fuels, AttributeEnum_Generator
+# Import enums (shipped with SDK, or regenerated from your database)
+from plexos_sdk.enums.system_enums import ClassEnum, CollectionEnum, PropertyEnum_Generators, PropertyEnum_Fuels, AttributeEnum_Generator
 
 # Use enums instead of IDs -> returns models
 generator: Object = sdk.add_object(
@@ -932,7 +933,7 @@ The SDK performs comprehensive duplicate detection when adding properties. Two p
 - **Membership and Property**: Same membership and property
 - **Band ID**: Same band_id (default is 1)
 - **Value**: Same numeric value
-- **Texts**: Same set of Text objects (data_file_text, time_slice_text) - compared by class_id, value, and action_id
+- **Texts**: Same set of Text objects (data_file_text, time_slice_text, expression_text) - compared by class_id, value, and action_id
 - **Tags**: Same set of Tag objects (data_file_tag, scenario_tag, expression_tag) - compared by object_id and action_id
 - **Date Ranges**: Same date_from and date_to values
 
