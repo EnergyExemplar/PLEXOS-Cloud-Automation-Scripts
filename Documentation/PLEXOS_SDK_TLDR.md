@@ -6,23 +6,33 @@
   - [📋 Table of Contents](#-table-of-contents)
   - [🚀 Installation \& Setup](#-installation--setup)
   - [🔄 Transactions](#-transactions)
+      - [Manual Transaction Control](#manual-transaction-control)
   - [🏗️ Hydrated Models](#️-hydrated-models)
   - [🔧 Basic Usage](#-basic-usage)
   - [📋 Core Operations](#-core-operations)
     - [Objects](#objects)
     - [Attributes](#attributes)
+      - [Method 1: Using Attribute Objects (Recommended for bulk operations)](#method-1-using-attribute-objects-recommended-for-bulk-operations)
+      - [Method 2: Using Lang IDs (Simpler for single assignments but has to make extra database calls so inefficient for loops and bulk operations)](#method-2-using-lang-ids-simpler-for-single-assignments-but-has-to-make-extra-database-calls-so-inefficient-for-loops-and-bulk-operations)
+      - [Update \& Remove Attributes](#update--remove-attributes)
     - [Memberships](#memberships)
     - [Properties](#properties)
     - [Memos](#memos)
-    - [Report Configuration](#report-configuration)
+      - [Data Memos](#data-memos)
+      - [Membership Memos](#membership-memos)
+      - [Object Memos (Custom Columns)](#object-memos-custom-columns)
     - [Categories](#categories)
-  - [⏰ Time Management](#-time-management)
+  - [🛠️ Helpers & Utilities](#️-helpers--utilities)
     - [Horizons](#horizons)
     - [Date Utilities](#date-utilities)
+    - [Report Configuration](#report-configuration)
   - [🚀 Quick Start Example](#-quick-start-example)
   - [🗄️ Database Management](#️-database-management)
     - [XML Conversion](#xml-conversion)
+  - [⚙️ Database Configuration](#️-database-configuration)
   - [🎯 Enum Generation](#-enum-generation)
+    - [From SDK (preferred — no separate step)](#from-sdk-preferred--no-separate-step)
+    - [From CLI](#from-cli)
   - [🎯 Data Enums/Identifiers](#-data-enumsidentifiers)
   - [🔍 Query Methods](#-query-methods)
   - [🔧 Error Handling](#-error-handling)
@@ -30,8 +40,12 @@
   - [🌱 Seed Data Management](#-seed-data-management)
     - [Why Seed Data?](#why-seed-data)
     - [How Seed Data Is Produced](#how-seed-data-is-produced)
+      - [Step-by-Step: Building a Seed Data Package](#step-by-step-building-a-seed-data-package)
     - [Creating Databases from Seed Data](#creating-databases-from-seed-data)
+    - [Additional CLI Commands](#additional-cli-commands)
   - [⚠️ Important Notes](#️-important-notes)
+    - [Automatic System Relationships](#automatic-system-relationships)
+    - [Property Duplicate Detection](#property-duplicate-detection)
     - [Data Integrity](#data-integrity)
     - [Performance](#performance)
     - [Limitations](#limitations)
@@ -111,28 +125,34 @@ if data.tags:
 
 ```python
 from plexos_sdk import PLEXOSSDK
-from plexos_sdk.models.plexos_models import * # access to all classes
-from plexos_sdk.exceptions import * # access to any custom exceptions
-# Shipped with package (electric domain, latest version)
 from plexos_sdk.enums.system_enums import * # access to ENUMS
 # Or regenerate from your own database (replaces shipped file, no import change):
 # sdk.generate_enums()
 
-# Connect to database (accepts str or Path)
 with PLEXOSSDK("my_model.db") as sdk:
     try:
         with sdk.transaction():
-            # All write/update operations go here. read/query also acceptable but not required
-            sdk.create_something_fantastic()
-        
-        # Any read/query operations go here (outside transaction)
-        sdk.read_interesting_data()
+            # Add a generator — returns hydrated Object with relationships loaded
+            gen = sdk.add_object(ClassEnum.Generator, "WindFarm1")
+
+            # Access the auto-created System -> Generator membership via the model
+            membership = gen.child_memberships[0]
+
+            # Set capacity for a date period
+            capacity = sdk.get_property(
+                ClassEnum.System, CollectionEnum.Generators, PropertyEnum_Generators.MaxCapacity
+            )
+            data = sdk.add_property(
+                membership, capacity, 500.0,
+                date_from="2030-01-01T00:00:00",
+                date_to="2030-12-31T00:00:00",
+            )
+
+        # Hydrated models give you access to the full relationship graph
+        print(f"{gen.name} -> {data.property_ref.name}: {data.value}")
 
     except Exception as e:
         print(f"Operations failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return
 ```
 
 
@@ -296,9 +316,10 @@ all_data: List[Data] = sdk.get_property_data_all(membership=membership, property
 data: Data = sdk.get_property_data(membership=membership, property_obj=property_obj, scenario_tag=scenario_obj)
 
 # Bulk operations — add/update/delete across all memberships in a collection for a scenario
-added: int = sdk.bulk_add_property(ClassEnum.System, CollectionEnum.Generators, capacity_prop, 500.0, scenario_tag=scenario_obj)
-updated: int = sdk.bulk_update_property(scenario_obj, property_obj=capacity_prop, transform=lambda v: v * 1.1)  # +10%
-deleted: int = sdk.bulk_delete_property(scenario_obj, property_obj=capacity_prop)
+capacity = sdk.get_property(ClassEnum.System, CollectionEnum.Generators, PropertyEnum_Generators.MaxCapacity)
+added: int = sdk.bulk_add_property(ClassEnum.System, CollectionEnum.Generators, capacity, 500.0, scenario_tag=scenario_obj)
+updated: int = sdk.bulk_update_property(scenario_obj, property_obj=capacity, transform=lambda v: v * 1.1)  # +10%
+deleted: int = sdk.bulk_delete_property(scenario_obj, property_obj=capacity)
 ```
 
 ### Memos
@@ -354,6 +375,67 @@ success: bool = sdk.remove_memo_object(object=generator_obj, column=column)
 ```
 
 
+### Categories
+```python
+# Add category -> returns Category
+category: Category = sdk.add_category(class_lang_id=ClassEnum.Generator, category_name="Wind", description="Wind generators")
+
+# Get category by name -> returns Category
+category: Category = sdk.get_category_by_name(class_lang_id=ClassEnum.Generator, category_name="Wind")
+
+# Get all categories for a class -> returns list of Categories
+categories: List[Category] = sdk.get_categories(class_lang_id=ClassEnum.Generator)
+
+# Add object to category -> returns bool
+success: bool = sdk.add_object_category(class_lang_id=ClassEnum.Generator, object_name="Generator1", category_name="Wind")
+
+# Get objects in category -> returns list of Objects
+objects: List[Object] = sdk.get_objects_in_category(class_lang_id=ClassEnum.Generator, category_name="Wind")
+```
+
+## 🛠️ Helpers & Utilities
+
+### Horizons
+Horizons define simulation time periods. Common step types: 1=Day, 2=Week, 3=Month, 4=Year.
+
+```python
+from datetime import datetime
+
+# Create monthly horizon -> returns Object (Horizon class)
+horizon: Object = sdk.create_horizon(
+    name="2024 Monthly", date_from=datetime(2024, 1, 1), step_count=12, step_type=3, description="MonthlyHorizon for 2024")
+
+# With chronological parameters (for look-ahead/behind scheduling)
+horizon: Object = sdk.create_horizon(
+    name="2024 With Chrono",
+    date_from=datetime(2024, 1, 1), step_count=12, step_type=3,
+    chrono_date_from=datetime(2023, 12, 1),  # Look-behind start
+    chrono_step_count=14,                     # Extended chrono range
+    chrono_step_type=3                        # Monthly
+)
+
+# Get a specific horizon by name -> returns Object
+horizon: Object = sdk.get_horizon_by_name("2024 Monthly")
+
+# Update an existing horizon -> returns Object
+updated: Object = sdk.update_horizon(
+    horizon=horizon,
+    step_count=24,                            # Extend to 24 months
+    chrono_step_count=26                      # Extend chrono range
+)
+
+# List all horizons -> returns list of Objects
+horizons: List[Object] = sdk.list_all_horizons()
+```
+
+### Date Utilities
+```python
+from plexos_sdk import to_oa_date, from_oa_date
+
+# Convert between Python datetime and PLEXOS format
+oa_date = to_oa_date(datetime(2024, 1, 1))
+dt = from_oa_date(44927.0)
+```
 
 ### Report Configuration
 ```python
@@ -418,70 +500,6 @@ existing: List[Report] = sdk.get_report_configurations(
     phase_id=4  # Optional filter
 )
 ```
-
-
-### Categories
-```python
-# Add category -> returns Category
-category: Category = sdk.add_category(class_lang_id=ClassEnum.Generator, category_name="Wind", description="Wind generators")
-
-# Get category by name -> returns Category
-category: Category = sdk.get_category_by_name(class_lang_id=ClassEnum.Generator, category_name="Wind")
-
-# Get all categories for a class -> returns list of Categories
-categories: List[Category] = sdk.get_categories(class_lang_id=ClassEnum.Generator)
-
-# Add object to category -> returns bool
-success: bool = sdk.add_object_category(class_lang_id=ClassEnum.Generator, object_name="Generator1", category_name="Wind")
-
-# Get objects in category -> returns list of Objects
-objects: List[Object] = sdk.get_objects_in_category(class_lang_id=ClassEnum.Generator, category_name="Wind")
-```
-
-## ⏰ Time Management
-
-### Horizons
-Horizons define simulation time periods. Common step types: 1=Day, 2=Week, 3=Month, 4=Year.
-
-```python
-from datetime import datetime
-
-# Create monthly horizon -> returns Object (Horizon class)
-horizon: Object = sdk.create_horizon(
-    name="2024 Monthly", date_from=datetime(2024, 1, 1), step_count=12, step_type=3, description="MonthlyHorizon for 2024")
-
-# With chronological parameters (for look-ahead/behind scheduling)
-horizon: Object = sdk.create_horizon(
-    name="2024 With Chrono",
-    date_from=datetime(2024, 1, 1), step_count=12, step_type=3,
-    chrono_date_from=datetime(2023, 12, 1),  # Look-behind start
-    chrono_step_count=14,                     # Extended chrono range
-    chrono_step_type=3                        # Monthly
-)
-
-# Get a specific horizon by name -> returns Object
-horizon: Object = sdk.get_horizon_by_name("2024 Monthly")
-
-# Update an existing horizon -> returns Object
-updated: Object = sdk.update_horizon(
-    horizon=horizon,
-    step_count=24,                            # Extend to 24 months
-    chrono_step_count=26                      # Extend chrono range
-)
-
-# List all horizons -> returns list of Objects
-horizons: List[Object] = sdk.list_all_horizons()
-```
-
-### Date Utilities
-```python
-from plexos_sdk import to_oa_date, from_oa_date
-
-# Convert between Python datetime and PLEXOS format
-oa_date = to_oa_date(datetime(2024, 1, 1))
-dt = from_oa_date(44927.0)
-```
-
 
 ## 🚀 Quick Start Example
 
@@ -570,6 +588,20 @@ from plexos_sdk import XmlConverter
 converter = XmlConverter()
 converter.xml_to_db("model.xml", "model.db")
 converter.db_to_xml("model.db", "model.xml")
+```
+
+## ⚙️ Database Configuration
+
+```python
+# Set all properties to dynamic (enables time-varying property support globally)
+count = sdk.set_all_properties_dynamic()  # returns number of properties updated
+count = sdk.set_all_properties_dynamic(dynamic=False)  # revert to static
+
+# Set unit system and hydro model type
+sdk.set_base_unit_type(units="Metric", hydro_model="Energy")  # defaults
+sdk.set_base_unit_type(units="Imperial", hydro_model="Level")
+# Valid units: "Metric", "Imperial"
+# Valid hydro_model: "Auto", "Energy", "Level", "Volume"
 ```
 
 ## 🎯 Enum Generation

@@ -58,6 +58,26 @@ Transactions: with sdk.transaction() #required_for_writes
 Returns: Hydrated Peewee models with relationships loaded
 Auto-creates: Text,Tag,Band,DateFrom,DateTo when params provided
 
+### Membership Cardinality Rules
+Before creating memberships, query `t_collection` to check cardinality constraints. Do NOT hardcode these rules — they vary by PLEXOS version and domain. Always query at runtime:
+
+```python
+# Query collection cardinality before adding memberships
+collection = sdk.get_collection(parent_class_lang_id, collection_lang_id)
+# collection.is_one_to_many: True = parent can have many children, False = constrained
+# collection.min_count: minimum children required (0 = optional, 1+ = required)
+# collection.max_count: maximum children allowed (-1 = unlimited, 1 = exactly one)
+# collection.complement_min_count: minimum parents a child must have
+# collection.complement_max_count: maximum parents a child can have (-1 = unlimited)
+```
+
+Common patterns in the data:
+- `max_count=1`: one-to-one (e.g., Line -> Node From, Model -> Horizon)
+- `min_count=1, max_count=1`: required exactly one (e.g., Node -> Region)
+- `min_count=1, max_count=-1`: at least one, no upper limit (e.g., Generator -> Nodes)
+- `max_count=-1`: unlimited (most collections)
+- `complement_max_count=1`: child can belong to at most one parent in this collection
+
 ## Core SDK Methods
 
 # Initialize SDK with database connection
@@ -169,6 +189,8 @@ validate_value_by_rule(value:f!,validation_rule:s!)->ValidationResult
 to_oa_date(dt:dt!)->f
 from_oa_date(oa_date:(f|i)!)->dt
 refresh_cache(cache_type:s?)->None
+set_all_properties_dynamic(dynamic:b=True)->i
+set_base_unit_type(units:s="Metric",hydro_model:s="Energy")->None
 
 ## Seed Data Management Classes
 
@@ -217,6 +239,8 @@ ActionNotFoundError: Action not found by action_symbol
 ```python
 from plexos_sdk import PLEXOSSDK
 from plexos_sdk.enums.system_enums import ClassEnum, CollectionEnum, PropertyEnum_Generators
+# Or regenerate from your own database (replaces shipped file, no import change):
+# sdk.generate_enums()
 
 with PLEXOSSDK("model.db") as sdk:
     with sdk.transaction():
@@ -224,12 +248,13 @@ with PLEXOSSDK("model.db") as sdk:
         gen = sdk.add_object(ClassEnum.Generator, "WindFarm1", category_obj=category)
         membership = sdk.get_membership_by_child_name(ClassEnum.System, CollectionEnum.Generators, "System", "WindFarm1")
 
+        # Resolve property from class -> collection -> property lang_ids
+        capacity = sdk.get_property(ClassEnum.System, CollectionEnum.Generators, PropertyEnum_Generators.MaxCapacity)
+
         # Auto-creates Text[], DateFrom, DateTo
-        data = sdk.add_property(membership, capacity_prop, 500.0,
+        data = sdk.add_property(membership, capacity, 500.0,
             data_file_text="wind_capacity.csv", time_slice_text="M1-6",
             date_from="2024-01-01T00:00:00", date_to="2024-12-31T00:00:00")
-
-        attr_data = sdk.add_attribute_by_lang_id(gen, AttributeEnum_Generator.MaxOutput, 600.0)
 
         # Access via hydrated models
         print(data.property_ref.name, data.membership.collection.name)
