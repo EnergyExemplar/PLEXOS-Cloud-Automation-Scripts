@@ -81,8 +81,8 @@ Common patterns in the data:
 ## Core SDK Methods
 
 # Initialize SDK with database connection
-PLEXOSSDK(database_path:(s|Path)!)->context_manager
-PLEXOSSDK.from_xml(xml_path:(s|Path)!,db_path:(s|Path)!)->PLEXOSSDK
+PLEXOSSDK(database_path:(s|Path)!,system_object_name:s="System")->context_manager
+PLEXOSSDK.from_xml(xml_path:(s|Path)!,db_path:(s|Path)!,system_object_name:s="System")->PLEXOSSDK
 
 # XML conversion
 XmlConverter.xml_to_db(xml_path:s!,db_path:s!,overwrite:b=False)->s
@@ -156,10 +156,10 @@ get_horizon_by_name(name:s!)->Object
 list_all_horizons()->Object[]
 
 # Report configuration
-add_report_configuration(object_obj:Object!,reporting_lang_id:i!,phase_id:i!,report_period:b!,report_samples:b!,report_statistics:b!,report_summary:b!,write_flat_files:b!)->Report
-get_report_configurations(object_obj:Object!,reporting_lang_id:i!,phase_id:i?)->Report[]
-configure_report_properties(object_obj:Object!,reporting_lang_ids:i[]!,phase_id:i=4,report_period:b=True,report_samples:b=False,report_statistics:b=False,report_summary:b=True,write_flat_files:b=False)->Report[]
-create_report(model_obj:Object!,report_name:s!,reporting_lang_ids:i[]!,phase_id:i=4,report_period:b=True,report_samples:b=False,report_statistics:b=False,report_summary:b=True,write_flat_files:b=False)->Object
+add_report_configuration(object_obj:Object!,collection_lang_id:i!,reporting_lang_id:i!,phase_id:i!,report_period:b!,report_samples:b!,report_statistics:b!,report_summary:b!,write_flat_files:b!)->Report
+get_report_configurations(object_obj:Object!,collection_lang_id:i!,reporting_lang_id:i!,phase_id:i?)->Report[]
+configure_report_properties(object_obj:Object!,reporting_lang_ids:(i,i)[]!,phase_id:i=4,report_period:b=True,report_samples:b=False,report_statistics:b=False,report_summary:b=True,write_flat_files:b=False)->Report[]
+create_report(model_obj:Object!,report_name:s!,reporting_lang_ids:(i,i)[]!,phase_id:i=4,report_period:b=True,report_samples:b=False,report_statistics:b=False,report_summary:b=True,write_flat_files:b=False)->Object
 
 # Memo operations
 get_memo_data(data:Data!)->MemoData?
@@ -182,15 +182,16 @@ get_property(parent_class_lang_id:i!,collection_lang_id:i!,property_lang_id:i!)-
 get_attribute(class_lang_id:i!,attribute_lang_id:i!)->Attribute
 
 # Enum generation
-generate_enums(output_dir:(s|Path)?=None,domain_name:s?,save_analysis:b=False)->s
+generate_enums(output_dir:(s|Path)?=None)->s
 
 # Utility methods
 validate_value_by_rule(value:f!,validation_rule:s!)->ValidationResult
 to_oa_date(dt:dt!)->f
 from_oa_date(oa_date:(f|i)!)->dt
 refresh_cache(cache_type:s?)->None
-set_all_properties_dynamic(dynamic:b=True)->i
 set_base_unit_type(units:s="Metric",hydro_model:s="Energy")->None
+# Database validation (diagnostic only — audit databases from external tools or legacy imports)
+validate()->List[s]
 
 ## Seed Data Management Classes
 
@@ -221,6 +222,7 @@ generate_seed_data_zip(output_zip_path:s!,system_types:s[]?,version:s?,overwrite
 
 ## Common Exceptions
 InvalidObjectNameError: Object name validation failed
+ObjectAlreadyExistsError: Object with same name already exists in class (case-insensitive)
 ObjectNotFoundError: Object not found by name/ID
 SystemObjectError: Multiple System objects not allowed
 CategoryNotFoundError: Category not found

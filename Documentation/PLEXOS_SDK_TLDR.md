@@ -22,7 +22,7 @@
       - [Membership Memos](#membership-memos)
       - [Object Memos (Custom Columns)](#object-memos-custom-columns)
     - [Categories](#categories)
-  - [🛠️ Helpers & Utilities](#️-helpers--utilities)
+  - [🛠️ Helpers \& Utilities](#️-helpers--utilities)
     - [Horizons](#horizons)
     - [Date Utilities](#date-utilities)
     - [Report Configuration](#report-configuration)
@@ -30,6 +30,7 @@
   - [🗄️ Database Management](#️-database-management)
     - [XML Conversion](#xml-conversion)
   - [⚙️ Database Configuration](#️-database-configuration)
+  - [🔍 Database Validation](#-database-validation)
   - [🎯 Enum Generation](#-enum-generation)
     - [From SDK (preferred — no separate step)](#from-sdk-preferred--no-separate-step)
     - [From CLI](#from-cli)
@@ -396,22 +397,26 @@ objects: List[Object] = sdk.get_objects_in_category(class_lang_id=ClassEnum.Gene
 ## 🛠️ Helpers & Utilities
 
 ### Horizons
-Horizons define simulation time periods. Common step types: 1=Day, 2=Week, 3=Month, 4=Year.
+Horizons define simulation time periods.
+- Planning step types: 1=Day, 2=Week, 3=Month, 4=Year
+- Chrono step types (ST Schedule): -1=Second, 0=Minute, 1=Hour, 2=Day, 3=Week
+- Raises ObjectAlreadyExistsError if name exists — use update_horizon() to modify.
 
 ```python
 from datetime import datetime
 
 # Create monthly horizon -> returns Object (Horizon class)
 horizon: Object = sdk.create_horizon(
-    name="2024 Monthly", date_from=datetime(2024, 1, 1), step_count=12, step_type=3, description="MonthlyHorizon for 2024")
+    name="2024 Monthly", date_from=datetime(2024, 1, 1), step_count=12, step_type=3, description="Monthly horizon for 2024")
 
-# With chronological parameters (for look-ahead/behind scheduling)
+# With chronological parameters (ST Schedule configuration)
+# NOTE: chrono period must fit within planning horizon — SDK raises ValidationError if chrono end exceeds horizon end
 horizon: Object = sdk.create_horizon(
     name="2024 With Chrono",
     date_from=datetime(2024, 1, 1), step_count=12, step_type=3,
-    chrono_date_from=datetime(2023, 12, 1),  # Look-behind start
-    chrono_step_count=14,                     # Extended chrono range
-    chrono_step_type=3                        # Monthly
+    chrono_date_from=datetime(2024, 1, 1),
+    chrono_step_count=365,                    # 365 days — must not exceed horizon window
+    chrono_step_type=2                        # Day (chrono enum, not planning enum)
 )
 
 # Get a specific horizon by name -> returns Object
@@ -593,15 +598,21 @@ converter.db_to_xml("model.db", "model.xml")
 ## ⚙️ Database Configuration
 
 ```python
-# Set all properties to dynamic (enables time-varying property support globally)
-count = sdk.set_all_properties_dynamic()  # returns number of properties updated
-count = sdk.set_all_properties_dynamic(dynamic=False)  # revert to static
-
 # Set unit system and hydro model type
 sdk.set_base_unit_type(units="Metric", hydro_model="Energy")  # defaults
 sdk.set_base_unit_type(units="Imperial", hydro_model="Level")
 # Valid units: "Metric", "Imperial"
 # Valid hydro_model: "Auto", "Energy", "Level", "Volume"
+```
+
+## 🔍 Database Validation
+
+```python
+# Run all integrity checks — returns list of warning strings (empty = clean)
+warnings = sdk.validate()
+for w in warnings:
+    print(w)
+
 ```
 
 ## 🎯 Enum Generation
@@ -622,18 +633,6 @@ from plexos_sdk.enums.system_enums import ClassEnum, PropertyEnum_Generators
 with PLEXOSSDK("my_database.db") as sdk:
     sdk.generate_enums()  # replaces shipped enums with your database's version
     # Same import above now reflects your version/domain — no changes needed
-```
-
-### From CLI
-```bash
-# Generate system_enums.py with auto-detected domain
-plexos-sdk generate-enums my_database.db --output ./
-
-# Generate for specific domain
-plexos-sdk generate-enums my_database.db --domain gas --output ./
-
-# Generate with analysis report
-plexos-sdk generate-enums my_database.db --domain gas --output ./ --analysis
 ```
 
 ## 🎯 Data Enums/Identifiers
