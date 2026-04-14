@@ -385,25 +385,50 @@ stages:
           git fetch origin master
           git fetch origin release
 
-          # ── Sync public/master → internal master (squash) ──
-          $publicMasterTree  = git rev-parse "public/master^{tree}"
+          # ── Sync public/master → internal master (create PR) ──
+          $publicMasterTree   = git rev-parse "public/master^{tree}"
           $internalMasterTree = git rev-parse "origin/master^{tree}"
           if ($publicMasterTree -ne $internalMasterTree) {
-            Write-Host "Content differs between public/master and internal master — squash-syncing"
+            Write-Host "Content differs between public/master and internal master — creating PR"
 
-            # Build a squash commit: full tree of public/master parented onto origin/master
-            $squashCommit = git commit-tree $publicMasterTree -p origin/master -m "merged from public repo"
+            # Push public/master content onto a dated sync branch in the internal repo
+            $dateSuffix = (Get-Date -Format 'yyyyMMdd-HHmmss')
+            $syncBranch = "sync/public-master-$dateSuffix"
+
+            # Create a commit: full tree of public/master parented onto origin/master
+            $syncCommit = git commit-tree $publicMasterTree -p origin/master -m "Reverse sync: public/master to internal master"
             if ($LASTEXITCODE -ne 0) {
-              Write-Host "##vso[task.logissue type=error]Failed to create squash commit for master."
+              Write-Host "##vso[task.logissue type=error]Failed to create sync commit for master PR."
               exit 1
             }
 
-            git push origin "${squashCommit}:refs/heads/master"
+            git push origin "${syncCommit}:refs/heads/$syncBranch"
             if ($LASTEXITCODE -ne 0) {
-              Write-Host "##vso[task.logissue type=error]Failed to push squash commit to internal master."
+              Write-Host "##vso[task.logissue type=error]Failed to push sync branch to internal repo."
               exit 1
             }
-            Write-Host "✅ Squash-synced public/master into internal master (commit $squashCommit)"
+            Write-Host "[OK] Pushed sync branch: $syncBranch"
+
+            # Create PR via GitHub API
+            $prBody = @{
+              title = "Reverse sync: public/master to internal master ($dateSuffix)"
+              head  = $syncBranch
+              base  = "master"
+              body  = "Automated reverse sync from EnergyExemplar/PLEXOS-Cloud-Automation-Scripts public master."
+            } | ConvertTo-Json
+
+            $prResponse = Invoke-RestMethod -Method Post `
+              -Uri "https://api.github.com/repos/energyexemplar-cloudplatform/PLEXOS-Cloud-Automation-Scripts-internal/pulls" `
+              -Headers @{ Authorization = "token $env:GITHUB_TOKEN"; Accept = 'application/vnd.github+json' } `
+              -Body $prBody `
+              -ContentType 'application/json'
+
+            if ($prResponse -and $prResponse.html_url) {
+              Write-Host "✅ PR created: $($prResponse.html_url)"
+            } else {
+              Write-Host "##vso[task.logissue type=error]PR creation failed or returned no URL."
+              exit 1
+            }
           } else {
             Write-Host "ℹ️  No new commits to sync — internal master is already up to date with public/master"
           }
