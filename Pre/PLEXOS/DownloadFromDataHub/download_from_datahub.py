@@ -130,7 +130,6 @@ def main() -> int:
     )
     parser.add_argument(
         "-l", "--local-folder",
-        default=None,
         help=(
             "Local destination folder. "
             "Pass 'simulation_path' to use the SIMULATION_PATH env var. "

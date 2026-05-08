@@ -24,5 +24,8 @@ fastparquet>=0.8.0
 # Optional: For extended datetime parsing
 python-dateutil>=2.8.0
 
+# Graph analysis
+networkx>=2.6.0
+
 # Existing requirements
 duckdb

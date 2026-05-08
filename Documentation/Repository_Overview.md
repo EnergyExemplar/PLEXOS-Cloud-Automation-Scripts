@@ -130,7 +130,6 @@ See the other files in this `Documentation/` folder:
 | File | Contents |
 |---|---|
 | [`CloudSDK.md`](CloudSDK.md) | Full CloudSDK API reference — method signatures, parameters, response shapes |
-| [`PLEXOS_SDK_Methods.md`](PLEXOS_SDK_Methods.md) | PLEXOS SDK public method signatures |
 | [`PLEXOS_SDK_TLDR.md`](PLEXOS_SDK_TLDR.md) | PLEXOS SDK quick-reference cheat sheet |
 
 ---

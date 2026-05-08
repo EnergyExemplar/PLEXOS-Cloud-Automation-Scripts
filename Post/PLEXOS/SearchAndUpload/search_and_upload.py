@@ -43,6 +43,10 @@ except KeyError:
     print("Error: Missing required environment variable: cloud_cli_path")
     sys.exit(1)
 
+# --- Domain constants ---
+CSV_SAMPLE_SIZE = 100000
+PARQUET_COMPRESSION = "ZSTD"
+
 
 def _decode_arg(value: str) -> str:
     """Strip surrounding quotes left by a non-shell task runner, then URL-decode."""
@@ -96,7 +100,8 @@ def find_in_zips(file_name: str, search_paths: list[str], extract_dir: str) -> s
                     for entry in zf.namelist():
                         if not fnmatch.fnmatch(Path(entry).name, file_name):
                             continue
-                        # Reject entries that could escape extract_dir (Zip Slip)
+                        # Zip Slip prevention (CWE-22): reject entries with absolute
+                        # paths or ".." components that could write outside extract_dir.
                         entry_path = Path(entry)
                         if entry_path.is_absolute() or any(
                             part == ".." for part in entry_path.parts
@@ -136,8 +141,8 @@ def convert_csv_to_parquet(csv_path: str) -> tuple[str, bool]:
         parquet_esc = parquet_path.replace("'", "''")
 
         conn.sql(
-            f"COPY (SELECT * FROM read_csv_auto('{csv_esc}', sample_size=100000)) "
-            f"TO '{parquet_esc}' (FORMAT 'parquet', COMPRESSION 'ZSTD')"
+            f"COPY (SELECT * FROM read_csv_auto('{csv_esc}', sample_size={CSV_SAMPLE_SIZE})) "
+            f"TO '{parquet_esc}' (FORMAT 'parquet', COMPRESSION '{PARQUET_COMPRESSION}')"
         )
 
         if not Path(parquet_path).exists():
@@ -145,7 +150,7 @@ def convert_csv_to_parquet(csv_path: str) -> tuple[str, bool]:
             return "", False
 
         csv_rows = conn.sql(
-            f"SELECT COUNT(*) FROM read_csv_auto('{csv_esc}', sample_size=100000)"
+            f"SELECT COUNT(*) FROM read_csv_auto('{csv_esc}', sample_size={CSV_SAMPLE_SIZE})"
         ).fetchone()[0]
         parquet_rows = conn.sql(f"SELECT COUNT(*) FROM '{parquet_esc}'").fetchone()[0]
 
@@ -314,7 +319,6 @@ def main() -> int:
     )
     parser.add_argument(
         "-p", "--path",
-        default=None,
         help=(
             "Primary directory to search. When omitted (or if the file is not found "
             "there), output_path is searched next, then simulation_path."
@@ -322,7 +326,6 @@ def main() -> int:
     )
     parser.add_argument(
         "-u", "--upload-path",
-        default=None,
         dest="upload_path",
         help=(
             "DataHub destination folder to upload the staged file to "

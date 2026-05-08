@@ -181,6 +181,10 @@ class SolutionDataQueryWorker:
     it in output_path for automatic platform upload.
     """
 
+    PARQUET_COMPRESSION = "ZSTD"
+    DEFAULT_OUTPUT_FILENAME = "SolsData.parquet"
+    BYTES_PER_MB = 1024 * 1024
+
     def __init__(self, output_path: Path, directory_map_path: Path) -> None:
         """
         Args:
@@ -385,7 +389,7 @@ class SolutionDataQueryWorker:
             print(f"[OK] Starting DuckDB join and export (streaming mode enabled)...")
             connection.execute(
                 f"COPY ({select_sql}) TO '{output_sql_path}' "
-                "(FORMAT PARQUET, COMPRESSION ZSTD)"
+                f"(FORMAT PARQUET, COMPRESSION {self.PARQUET_COMPRESSION})"
             )
             return True
         except Exception as exc:
@@ -441,7 +445,7 @@ class SolutionDataQueryWorker:
                 return False
             output_file = dest_folder / f"{parquet_name}.parquet"
         else:
-            output_file = dest_folder / "SolsData.parquet"
+            output_file = dest_folder / self.DEFAULT_OUTPUT_FILENAME
         staging_start = perf_counter()
 
         # Solution extraction — validate source parquet structure
@@ -480,21 +484,28 @@ class SolutionDataQueryWorker:
                 print(f"        Verify filter values match the actual data in source parquet files")
                 return False
 
-            size_bytes = output_file.stat().st_size if output_file.exists() else 0
-            size_mb = size_bytes / (1024 * 1024)
-            total_elapsed_seconds = perf_counter() - staging_start
-            rows_per_second = total_rows / export_elapsed_seconds if export_elapsed_seconds > 0 else 0
-            mb_per_second = size_mb / export_elapsed_seconds if export_elapsed_seconds > 0 else 0
-
-            print(f"[OK] Written: {output_file}")
-            print(f"[OK] Size: {size_mb:.2f} MB ({size_bytes:,} bytes)")
-            print(f"[OK] Time: Export={export_elapsed_seconds:.2f}s, Total={total_elapsed_seconds:.2f}s")
-            print(f"[OK] Performance: {rows_per_second:,.0f} rows/sec, {mb_per_second:.2f} MB/sec")
-            print(f"[OK] Summary: SolutionsJoined=1, Rows={total_rows:,}")
+            self._log_export_metrics(output_file, total_rows, export_elapsed_seconds, staging_start)
 
             return True
         finally:
             connection.close()
+
+    def _log_export_metrics(
+        self, output_file: Path, total_rows: int,
+        export_elapsed_seconds: float, staging_start: float
+    ) -> None:
+        """Log file size, timing, and throughput metrics after a successful export."""
+        size_bytes = output_file.stat().st_size if output_file.exists() else 0
+        size_mb = size_bytes / self.BYTES_PER_MB
+        total_elapsed_seconds = perf_counter() - staging_start
+        rows_per_second = total_rows / export_elapsed_seconds if export_elapsed_seconds > 0 else 0
+        mb_per_second = size_mb / export_elapsed_seconds if export_elapsed_seconds > 0 else 0
+
+        print(f"[OK] Written: {output_file}")
+        print(f"[OK] Size: {size_mb:.2f} MB ({size_bytes:,} bytes)")
+        print(f"[OK] Time: Export={export_elapsed_seconds:.2f}s, Total={total_elapsed_seconds:.2f}s")
+        print(f"[OK] Performance: {rows_per_second:,.0f} rows/sec, {mb_per_second:.2f} MB/sec")
+        print(f"[OK] Summary: SolutionsJoined=1, Rows={total_rows:,}")
 
     def run(self, args: argparse.Namespace) -> int:
         """
@@ -608,29 +619,24 @@ def main() -> int:
     )
     parser.add_argument(
         "-fn", "--parquet-name",
-        default=None,
         help="Optional output parquet file name without extension (default: slug from collection+property filters).",
     )
     parser.add_argument(
         "-sd", "--start-date",
-        default=None,
         help="Optional start date filter (inclusive). Format: YYYY-MM-DD. Filters rows where StartDate >= value.",
     )
     parser.add_argument(
         "-ed", "--end-date",
-        default=None,
         help="Optional end date filter (inclusive). Format: YYYY-MM-DD. Filters rows where EndDate <= value.",
     )
     parser.add_argument(
         "-on", "--object-name",
         nargs="+",
-        default=[],
         help="Optional filter for ObjectName (maps to ChildObjectName, case-insensitive, supports wildcards: * and ?).",
     )
     parser.add_argument(
         "-cat", "--category-name",
         nargs="+",
-        default=[],
         help="Optional filter for CategoryName (maps to ChildObjectCategoryName, case-insensitive, supports wildcards: * and ?).",
     )
 

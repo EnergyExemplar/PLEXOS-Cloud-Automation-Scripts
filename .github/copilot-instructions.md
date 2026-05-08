@@ -13,7 +13,6 @@ This repository contains pre- and post-simulation automation scripts for the **P
 | Topic | File | Key sections |
 |---|---|---|
 | CloudSDK method signatures, param names, response shapes | [`Documentation/CloudSDK.md`](../Documentation/CloudSDK.md) | `## Datahub` → `datahub.download`, `datahub.upload` |
-| PLEXOS SDK public method signatures | [`Documentation/PLEXOS_SDK_Methods.md`](../Documentation/PLEXOS_SDK_Methods.md) | Full file |
 | PLEXOS SDK quick-reference cheat sheet | [`Documentation/PLEXOS_SDK_TLDR.md`](../Documentation/PLEXOS_SDK_TLDR.md) | Full file |
 | Repository structure, script types, design rules | [`Documentation/Repository_Overview.md`](../Documentation/Repository_Overview.md) | Full file |
 
@@ -253,13 +252,11 @@ from eecloud.cloudsdk import CloudSDK, SDKBase
 pxc = CloudSDK(cli_path=CLOUD_CLI_PATH)
 ```
 
-Always pass `print_message=False` and handle response data manually for consistent output formatting.
-
 > **For correct parameter names and response shapes, refer to `CloudSDK.md` → `## Datahub` section.**
 >
 > Common gotchas confirmed from that doc:
 > - `datahub.download` — correct params are `remote_glob_patterns` (list) and `output_directory`. The params `remote_folder` and `local_folder` do **not** exist on download.
-> - `datahub.upload` — correct params are `local_folder`, `remote_folder`, `glob_patterns` (list), `is_versioned`. Always pass `print_message=False`.
+> - `datahub.upload` — correct params are `local_folder`, `remote_folder`, `glob_patterns` (list), `is_versioned`.
 > - Response model for both: `data.DatahubResourceResults[i].Success`, `.RelativeFilePath`, `.LocalFilePath`, `.FailureReason`.
 > - A `FailureReason` of `"File is identical to the remote file"` is not a real failure — treat it as success.
 

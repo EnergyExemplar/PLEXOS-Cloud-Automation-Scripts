@@ -11,6 +11,21 @@ from typing import Optional
 from eecloud.cloudsdk import CloudSDK, SDKBase
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# USER CONFIGURATION — These defaults apply when the corresponding CLI flag is omitted.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Glob pattern for files to upload from directory
+UPLOAD_PATTERN = "**/*"
+
+# Upload files as versioned in DataHub
+IS_VERSIONED = False
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# END OF USER CONFIGURATION — No changes needed below this line.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
 class DataHubUploader:
     """Reusable DataHub uploader for automation scripts."""
     
@@ -171,6 +186,7 @@ Examples:
         '-f', '--file',
         action='append',
         dest='files',
+        default=None,
         help='Local file path to upload (can be specified multiple times)'
     )
     
@@ -181,7 +197,7 @@ Examples:
     
     parser.add_argument(
         '--pattern',
-        default='**/*',
+        default=UPLOAD_PATTERN,
         help='Glob pattern for files to upload from directory (default: "**/*")'
     )
     
@@ -193,12 +209,13 @@ Examples:
     
     parser.add_argument(
         '--versioned',
-        action='store_true',
+        action=argparse.BooleanOptionalAction,
+        default=IS_VERSIONED,
         help='Upload files as versioned in DataHub'
     )
     
     args = parser.parse_args()
-    
+
     if not args.files and not args.directory:
         print("[ERROR] Must specify either --file or --directory")
         return 1

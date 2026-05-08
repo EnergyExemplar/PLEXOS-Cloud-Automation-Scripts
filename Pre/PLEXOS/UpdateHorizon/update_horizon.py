@@ -183,20 +183,17 @@ def main() -> int:
     parser.add_argument(
         "--date-from",
         type=_parse_date,
-        default=None,
         help="New simulation start date (ISO format, e.g. 2025-01-01).",
     )
     parser.add_argument(
         "--step-count",
         type=int,
-        default=None,
         help="New number of steps.",
     )
     parser.add_argument(
         "--step-type",
         type=str,
         choices=list(STEP_TYPES.keys()) + ["1", "2", "3", "4"],
-        default=None,
         help="Step type: day (1), week (2), month (3), year (4).",
     )
     print(f"\n[OK] Received: python3 {' '.join(sys.argv)}")

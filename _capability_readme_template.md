@@ -30,6 +30,12 @@ This is a **focused script** — it does one thing only. [Pair it with other scr
 
 ---
 
+## User Configuration
+
+This script includes a **USER CONFIGURATION** block near the top of the file that shows the default values for each CLI argument. See the [main README](../../../README.md#user-configuration) for details.
+
+---
+
 ## Arguments
 
 | Argument | Required | Default | Description |
@@ -41,7 +47,7 @@ This is a **focused script** — it does one thing only. [Pair it with other scr
 
 ## Environment Variables Used
 
-For the full variable reference, see the [main README](../../README.md#environment-variables).
+For the full variable reference, see the [main README](../../../README.md#environment-variables).
 
 | Variable | Description |
 |---|---|

@@ -34,6 +34,26 @@ sns.set_style("whitegrid")
 OUTPUT_PATH = Path(os.environ.get("output_path", "./output"))
 SIM_PATH    = Path(os.environ.get("simulation_path", "/simulation"))
 
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# USER CONFIGURATION — These defaults are used when no command-line arguments are provided.
+# ═══════════════════════════════════════════════════════════════════════════════
+# Timestamp alignment method: "intersection", "union", "use-first-file", "use-last-file".
+# Example: "union"
+ALIGNMENT = "union"
+
+# Missing value strategy: "none", "drop", "forward_fill", "backward_fill", "interpolate".
+# Example: "none"
+HANDLE_MISSING = "none"
+# Keep rows where all differences are zero (False = drop them).
+# Example: False
+KEEP_ZERO_DIFF = False
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# END OF USER CONFIGURATION — No changes needed below this line.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
 # Alignment option → pandas join type
 ALIGNMENT_MAP = {
     "intersection":    "inner",
@@ -102,9 +122,17 @@ class DatetimeDetector:
         "second": ["second", "sec", "ss"],
     }
 
+    # Fraction of rows that must parse as datetime for a column to be accepted.
+    # detect_column uses the higher threshold (exploratory heuristic);
+    # parse_column uses the lower threshold (explicit user selection).
+    VALID_DATETIME_THRESHOLD = 0.7
+    MIN_VALID_PARSE_RATE = 0.5
+
     @classmethod
     def detect_column(cls, df: pd.DataFrame, label: str) -> Optional[str]:
         """Return the most likely single datetime column name."""
+        if len(df) == 0:
+            return None
         for col in df.columns:
             if pd.api.types.is_datetime64_any_dtype(df[col]):
                 return col
@@ -115,7 +143,7 @@ class DatetimeDetector:
                 continue
             try:
                 parsed = pd.to_datetime(df[col], errors="coerce")
-                if parsed.notna().sum() / len(df) > 0.7:
+                if parsed.notna().sum() / len(df) > cls.VALID_DATETIME_THRESHOLD:
                     return col
             except Exception:
                 continue
@@ -134,11 +162,18 @@ class DatetimeDetector:
 
     @classmethod
     def parse_column(cls, df: pd.DataFrame, col: str, label: str) -> Optional[pd.DataFrame]:
-        """Parse a datetime column into _parsed_datetime."""
+        """Parse a datetime column into _parsed_datetime.
+
+        Returns None for empty input instead of raising, so callers can
+        treat this edge case as a handled validation failure.
+        """
+        if len(df) == 0:
+            print(f"[ERROR] {label}: empty DataFrame, cannot parse datetime")
+            return None
         df = df.copy()
         df["_parsed_datetime"] = pd.to_datetime(df[col], format="mixed", errors="coerce")
         valid = df["_parsed_datetime"].notna().sum() / len(df)
-        if valid < 0.5:
+        if valid < cls.MIN_VALID_PARSE_RATE:
             print(f"[ERROR] {label}: only {valid*100:.1f}% of '{col}' parsed as datetime")
             return None
         print(f"[OK]    {label}: parsed datetime column '{col}' ({valid*100:.1f}% valid)")
@@ -147,6 +182,9 @@ class DatetimeDetector:
     @classmethod
     def parse_components(cls, df: pd.DataFrame, components: List[str], label: str) -> Optional[pd.DataFrame]:
         """Build _parsed_datetime from component columns (year, month, day, …)."""
+        if len(df) == 0:
+            print(f"[ERROR] {label}: empty DataFrame, cannot parse components")
+            return None
         df = df.copy()
         comp_map: Dict[str, int] = {}
         for col in components:
@@ -184,6 +222,24 @@ class TimeSeriesComparator:
         drop_zero_diff:   Drop rows where all differences are zero/NaN.
         datetime_alias:   Rename _parsed_datetime in the output Parquet.
     """
+
+    # Tukey’s fences IQR-based anomaly detection thresholds.
+    # Points outside [Q1 - k*IQR, Q3 + k*IQR] are flagged as anomalies.
+    IQR_LOWER_QUANTILE = 0.25
+    IQR_UPPER_QUANTILE = 0.75
+    IQR_FENCE_MULTIPLIER = 1.5
+
+    # Values with |x| below this are treated as zero when computing MAPE
+    # to avoid division-by-near-zero distortion.
+    NEAR_ZERO_EPSILON = 1e-9
+
+    # Gap detection: intervals exceeding this multiple of the mode interval
+    # are flagged as data gaps.
+    GAP_MULTIPLIER = 3
+
+    # Chart rendering defaults
+    CHART_FIGSIZE = (14, 12)
+    CHART_DPI = 100
 
     def __init__(
         self,
@@ -355,14 +411,14 @@ class TimeSeriesComparator:
             mode_diff = valid.dt.round("1s").mode()[0]
         except Exception:
             mode_diff = valid.median()
-        gaps = diffs[diffs > mode_diff * 3]
+        gaps = diffs[diffs > mode_diff * self.GAP_MULTIPLIER]
         if len(gaps):
-            print(f"[WARN]  {len(gaps)} gap(s) detected (threshold: {mode_diff * 3})")
+            print(f"[WARN]  {len(gaps)} gap(s) detected (threshold: {mode_diff * self.GAP_MULTIPLIER})")
 
     def _detect_anomalies(self, series: pd.Series) -> int:
-        q1, q3 = series.quantile(0.25), series.quantile(0.75)
+        q1, q3 = series.quantile(self.IQR_LOWER_QUANTILE), series.quantile(self.IQR_UPPER_QUANTILE)
         iqr = q3 - q1
-        return int(((series < q1 - 1.5 * iqr) | (series > q3 + 1.5 * iqr)).sum())
+        return int(((series < q1 - self.IQR_FENCE_MULTIPLIER * iqr) | (series > q3 + self.IQR_FENCE_MULTIPLIER * iqr)).sum())
 
     # ── Step 6: Compare & output ──────────────────────────────────────────────
 
@@ -379,7 +435,7 @@ class TimeSeriesComparator:
         ss_res   = np.sum(diff ** 2)
         ss_tot   = np.sum((ya - np.mean(ya)) ** 2)
         r2       = float(1 - ss_res / ss_tot) if ss_tot != 0 else float("nan")
-        nz       = np.abs(ya) > 1e-9
+        nz       = np.abs(ya) > self.NEAR_ZERO_EPSILON
         mape     = float(np.mean(np.abs(diff[nz] / ya[nz])) * 100) if nz.sum() > 0 else float("nan")
         return {
             "valid_points": int(mask.sum()),
@@ -394,7 +450,7 @@ class TimeSeriesComparator:
 
     def _save_plot(self, col_a: str, col_b: str, metrics: dict) -> None:
         try:
-            fig, axes = plt.subplots(3, 1, figsize=(14, 12), sharex=False)
+            fig, axes = plt.subplots(3, 1, figsize=self.CHART_FIGSIZE, sharex=False)
             idx = self.aligned.index
 
             # Panel 1 — overlay
@@ -446,7 +502,7 @@ class TimeSeriesComparator:
                 .replace(" ", "_")
             )
             out  = self.output_dir / f"{safe}.png"
-            plt.savefig(out, dpi=100, bbox_inches="tight")
+            plt.savefig(out, dpi=self.CHART_DPI, bbox_inches="tight")
             plt.close(fig)
             print(f"[OK]    Plot saved: {out.name}")
         except Exception as e:
@@ -573,7 +629,7 @@ def main() -> int:
         help="File to compare. Repeat 2–4 times. Optionally append :Label.",
     )
     parser.add_argument(
-        "-o", "--output-path", default=None,
+        "-o", "--output-path",
         help=(
             "Directory to write results into. "
             "Defaults to the output_path environment variable. "
@@ -581,25 +637,25 @@ def main() -> int:
         ),
     )
     parser.add_argument(
-        "-p", "--prefix", default=None,
+        "-p", "--prefix",
         help="Prefix for the timestamped output folder (default: Analysis_<ts>).",
     )
     parser.add_argument(
-        "-j", "--alignment", default="union",
+        "-j", "--alignment", default=ALIGNMENT,
         choices=list(ALIGNMENT_MAP.keys()),
         help="Timestamp alignment method (default: union).",
     )
     parser.add_argument(
-        "-m", "--handle-missing", default="none", dest="handle_missing",
+        "-m", "--handle-missing", default=HANDLE_MISSING, dest="handle_missing",
         choices=["none", "drop", "forward_fill", "backward_fill", "interpolate"],
         help="Missing value strategy after alignment (default: none).",
     )
     parser.add_argument(
-        "-ta", "--timestamp-alias", default=None, dest="timestamp_alias",
+        "-ta", "--timestamp-alias", dest="timestamp_alias",
         help="Rename _parsed_datetime to this name in the output Parquet.",
     )
     parser.add_argument(
-        "-k", "--keep-zero-diff", action="store_true", default=False,
+        "-k", "--keep-zero-diff", action=argparse.BooleanOptionalAction, default=KEEP_ZERO_DIFF,
         help="Keep rows where all differences are zero (default: drop them).",
     )
     args = parser.parse_args()

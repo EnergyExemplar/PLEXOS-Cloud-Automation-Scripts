@@ -48,11 +48,11 @@ def _mock_sdk_context(report_object_name: str = "MyReport"):
 
 def _mock_discovery(
     report_class_lang_id: int = 42,
-    reporting_lang_ids: list[int] | None = None,
+    reporting_lang_ids: list[tuple[int, int]] | None = None,
 ):
     """Return a pair of patch.object patches for both discovery methods on ReportExtender."""
     if reporting_lang_ids is None:
-        reporting_lang_ids = [2052]
+        reporting_lang_ids = [(100, 2052)]
     return (
         patch.object(MOD.ReportExtender, "_discover_report_class_lang_id", return_value=report_class_lang_id),
         patch.object(MOD.ReportExtender, "_discover_reporting_lang_ids_by_name", return_value=reporting_lang_ids),
@@ -165,7 +165,7 @@ class TestDecodeValue:
 # ── Discovery helper tests ──────────────────────────────────────────────────────────────
 
 def _create_minimal_db(db_path: Path, report_class_lang_id: int = 42) -> None:
-    """Create a minimal t_class + t_property_report SQLite DB for discovery tests."""
+    """Create a minimal t_class + t_collection + t_property_report SQLite DB for discovery tests."""
     with sqlite3.connect(str(db_path)) as con:
         con.execute(
             "CREATE TABLE t_class (class_id INTEGER PRIMARY KEY, lang_id INTEGER, name TEXT)"
@@ -174,11 +174,18 @@ def _create_minimal_db(db_path: Path, report_class_lang_id: int = 42) -> None:
             "INSERT INTO t_class VALUES (1, ?, 'Report')", (report_class_lang_id,)
         )
         con.execute(
-            "CREATE TABLE t_property_report (property_id INTEGER PRIMARY KEY, lang_id INTEGER, name TEXT)"
+            "CREATE TABLE t_collection (collection_id INTEGER PRIMARY KEY, lang_id INTEGER, name TEXT)"
         )
         con.executemany(
-            "INSERT INTO t_property_report VALUES (?, ?, ?)",
-            [(1, 2052, "Emissions by Generator"), (2, 2053, "Fuel Offtake by Generator")],
+            "INSERT INTO t_collection VALUES (?, ?, ?)",
+            [(10, 100, "Generators"), (20, 200, "Fuels")],
+        )
+        con.execute(
+            "CREATE TABLE t_property_report (property_id INTEGER PRIMARY KEY, lang_id INTEGER, name TEXT, collection_id INTEGER)"
+        )
+        con.executemany(
+            "INSERT INTO t_property_report VALUES (?, ?, ?, ?)",
+            [(1, 2052, "Emissions by Generator", 10), (2, 2053, "Fuel Offtake by Generator", 20)],
         )
 
 
@@ -204,7 +211,7 @@ class TestDiscoverReportingLangIdsByName:
         _create_minimal_db(db)
         extender = MOD.ReportExtender(cli_path="mock", simulation_path=str(tmp_dir), study_id="test")
         result = extender._discover_reporting_lang_ids_by_name(["Emissions by Generator"])
-        assert result == [2052]
+        assert result == [(100, 2052)]
 
     def test_resolves_multiple_names(self, tmp_dir):
         db = tmp_dir / "reference.db"
@@ -213,14 +220,14 @@ class TestDiscoverReportingLangIdsByName:
         result = extender._discover_reporting_lang_ids_by_name(
             ["Emissions by Generator", "Fuel Offtake by Generator"]
         )
-        assert result == [2052, 2053]
+        assert result == [(100, 2052), (200, 2053)]
 
     def test_case_insensitive(self, tmp_dir):
         db = tmp_dir / "reference.db"
         _create_minimal_db(db)
         extender = MOD.ReportExtender(cli_path="mock", simulation_path=str(tmp_dir), study_id="test")
         result = extender._discover_reporting_lang_ids_by_name(["emissions by generator"])
-        assert result == [2052]
+        assert result == [(100, 2052)]
 
     def test_raises_on_unknown_name(self, tmp_dir):
         db = tmp_dir / "reference.db"
@@ -265,7 +272,7 @@ class TestReportExtender:
         """configure_report_properties receives all expected keyword arguments."""
         extender = _make_extender(tmp_dir)
         mock_sdk, mock_report_object = _mock_sdk_context()
-        p1, p2 = _mock_discovery(reporting_lang_ids=[2052, 2053])
+        p1, p2 = _mock_discovery(reporting_lang_ids=[(100, 2052), (200, 2053)])
 
         with p1, p2, patch.object(MOD, "PLEXOSSDK", return_value=mock_sdk):
             extender.extend(
@@ -281,7 +288,7 @@ class TestReportExtender:
 
         call_kwargs = mock_sdk.configure_report_properties.call_args.kwargs
         assert call_kwargs["object_obj"] is mock_report_object
-        assert call_kwargs["reporting_lang_ids"] == [2052, 2053]
+        assert call_kwargs["reporting_lang_ids"] == [(100, 2052), (200, 2053)]
         assert call_kwargs["phase_id"] == 3
         assert call_kwargs["report_period"] is True
         assert call_kwargs["report_samples"] is True
@@ -491,7 +498,7 @@ class TestMainFunction:
         """configure_report_properties is called with the correct parameter names."""
         (tmp_dir / "reference.db").write_text("mock db")
         mock_sdk, _ = _mock_sdk_context()
-        p1, p2 = _mock_discovery(reporting_lang_ids=[2052, 2053])
+        p1, p2 = _mock_discovery(reporting_lang_ids=[(100, 2052), (200, 2053)])
 
         with patch.object(MOD, "SIMULATION_PATH", tmp_dir):
             with p1, p2, patch.object(MOD, "PLEXOSSDK", return_value=mock_sdk):
@@ -514,7 +521,7 @@ class TestMainFunction:
         assert "report_statistics" in call_kwargs
         assert "report_summary" in call_kwargs
         assert "write_flat_files" in call_kwargs
-        assert call_kwargs["reporting_lang_ids"] == [2052, 2053]
+        assert call_kwargs["reporting_lang_ids"] == [(100, 2052), (200, 2053)]
         assert call_kwargs["report_samples"] is True
         assert call_kwargs["report_statistics"] is True
         assert call_kwargs["write_flat_files"] is True

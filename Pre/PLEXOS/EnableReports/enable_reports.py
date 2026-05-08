@@ -44,12 +44,45 @@ except KeyError:
 SIMULATION_PATH = os.environ.get("simulation_path", "/simulation")
 
 
+# PLEXOS simulation phase identifiers.
+# Each phase represents a distinct scheduling stage in the simulation engine:
+#   ST   = Short Term schedule  — hourly dispatch, unit commitment
+#   MT   = Medium Term schedule — weekly/monthly chronological optimisation
+#   PASA = PASA schedule        — reliability / capacity adequacy assessment
+#   LT   = Long Term plan       — investment / expansion planning
+# LT is the default because most reporting workflows target long-term results.
 PHASE_MAP: dict[str, int] = {
-    "ST": 1,    # ST Schedule
-    "MT": 2,    # MT Schedule
-    "PASA": 3,  # PASA
-    "LT": 4,    # LT Plan
+    "ST": 1,
+    "MT": 2,
+    "PASA": 3,
+    "LT": 4,
 }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# USER CONFIGURATION \u2014 These defaults are used when no command-line arguments are provided.
+# ═══════════════════════════════════════════════════════════════════════════════
+# Simulation phase: "ST", "MT", "PASA", or "LT"
+PHASE = "LT"
+
+# Enable period output
+REPORT_PERIOD = True
+
+# Enable sample output
+REPORT_SAMPLES = False
+
+# Enable statistics output
+REPORT_STATISTICS = False
+
+# Enable summary output
+REPORT_SUMMARY = True
+
+# Enable flat-file output
+WRITE_FLAT_FILES = False
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# END OF USER CONFIGURATION — No changes needed below this line.
+# ═══════════════════════════════════════════════════════════════════════════════
 
 
 def _decode_value(value: str) -> str:
@@ -272,18 +305,24 @@ class ReportExtender:
         print(f"[OK] Report class: '{class_name}' (lang_id={lang_id})")
         return int(lang_id)
 
-    def _discover_reporting_lang_ids_by_name(self, property_names: list[str]) -> list[int]:
+    def _discover_reporting_lang_ids_by_name(self, property_names: list[str]) -> list[tuple[int, int]]:
         """
-        Resolve reporting property lang ids from t_property_report by name (case-insensitive).
+        Resolve (collection_lang_id, reporting_lang_id) tuples from t_property_report by name.
+
+        The SDK's configure_report_properties expects each entry as a
+        (collection_lang_id, reporting_lang_id) tuple. The collection_lang_id
+        is looked up by joining t_property_report to t_collection.
 
         Raises ValueError if any name produces no match.
         """
-        result: list[int] = []
+        result: list[tuple[int, int]] = []
         with sqlite3.connect(self.db_path) as con:
             for name in property_names:
                 row = con.execute(
-                    "SELECT lang_id, name FROM t_property_report "
-                    "WHERE lower(name) = lower(?) ORDER BY property_id LIMIT 1",
+                    "SELECT pr.lang_id AS reporting_lang_id, pr.name, c.lang_id AS collection_lang_id "
+                    "FROM t_property_report pr "
+                    "JOIN t_collection c ON pr.collection_id = c.collection_id "
+                    "WHERE lower(pr.name) = lower(?) ORDER BY pr.property_id LIMIT 1",
                     (name,),
                 ).fetchone()
                 if not row:
@@ -291,9 +330,9 @@ class ReportExtender:
                         f"Reporting property '{name}' not found in t_property_report. "
                         "Check the property name against the model."
                     )
-                lang_id, matched_name = row
-                print(f"[OK] Reporting property: '{matched_name}' (lang_id={lang_id})")
-                result.append(int(lang_id))
+                reporting_lang_id, matched_name, collection_lang_id = row
+                print(f"[OK] Reporting property: '{matched_name}' (collection_lang_id={collection_lang_id}, reporting_lang_id={reporting_lang_id})")
+                result.append((int(collection_lang_id), int(reporting_lang_id)))
         return result
 
 
@@ -329,43 +368,50 @@ def main() -> int:
     parser.add_argument(
         "--phase",
         type=phase_name,
-        default="LT",
+        default=PHASE,
         help="Simulation phase for report configuration: ST (1), MT (2), PASA (3), LT (4) (default: LT).",
     )
+    # Report output toggles — defaults match the most common reporting workflow:
+    # report_period=True  → time-series data per interval (almost always needed)
+    # report_summary=True → aggregated totals (commonly used for validation)
+    # Others default to False to minimise output file size.
     parser.add_argument(
         "--report-period",
         type=str_to_bool,
-        default=True,
+        default=REPORT_PERIOD,
         help="Enable period output (default: true).",
     )
     parser.add_argument(
         "--report-samples",
         type=str_to_bool,
-        default=False,
+        default=REPORT_SAMPLES,
         help="Enable sample output (default: false).",
     )
     parser.add_argument(
         "--report-statistics",
         type=str_to_bool,
-        default=False,
+        default=REPORT_STATISTICS,
         help="Enable statistics output (default: false).",
     )
     parser.add_argument(
         "--report-summary",
         type=str_to_bool,
-        default=True,
+        default=REPORT_SUMMARY,
         help="Enable summary output (default: true).",
     )
     parser.add_argument(
         "--write-flat-files",
         type=str_to_bool,
-        default=False,
+        default=WRITE_FLAT_FILES,
         help="Enable flat-file output (default: false).",
     )
 
     print(f"\n[OK] Received: python3 {' '.join(sys.argv)}")
     args = parser.parse_args()
     args.report_object_name = _decode_value(args.report_object_name)
+    args.reporting_property_names = list(
+        dict.fromkeys(_decode_value(name) for name in args.reporting_property_names)
+    )
     phase_id = PHASE_MAP[args.phase]
     print(f"[OK] Interpreted: {args} -> phase_id={phase_id}\n")
 

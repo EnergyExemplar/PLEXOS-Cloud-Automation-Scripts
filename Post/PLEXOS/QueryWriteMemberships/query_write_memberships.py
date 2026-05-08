@@ -26,6 +26,19 @@ SIMULATION_PATH = os.environ.get('simulation_path', '/simulation')
 OUTPUT_PATH = os.environ.get('output_path', '/output')
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# USER CONFIGURATION \u2014 These defaults are used when no command-line arguments are provided.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Name of the output CSV file for membership data
+# Example: "memberships_data.csv" or "custom_memberships.csv"
+OUTPUT_FILE = "memberships_data.csv"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# END OF USER CONFIGURATION — No changes needed below this line.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
 class MembershipExporter:
     """Exports PLEXOS membership data from SQLite to CSV using DuckDB."""
     
@@ -184,7 +197,7 @@ Examples:
     )
     parser.add_argument(
         "-o", "--output-file",
-        default="memberships_data.csv",
+        default=OUTPUT_FILE,
         help="Name of output CSV file (default: memberships_data.csv)"
     )
     

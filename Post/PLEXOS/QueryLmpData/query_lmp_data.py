@@ -43,6 +43,25 @@ except KeyError:
 SIMULATION_PATH = os.environ.get("simulation_path", "/simulation")
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# USER CONFIGURATION — These defaults are used when no command-line arguments are provided.
+# ═══════════════════════════════════════════════════════════════════════════════
+# Filename of the memberships CSV in output_path, or an absolute path.
+# Example: "memberships_data.csv"
+MEMBERSHIPS_FILE = "memberships_data.csv"
+
+# PeriodTypeName filter value.
+# Example: "Interval"
+PERIOD_TYPE = "Interval"
+
+# PhaseName filter value.
+# Example: "ST"
+PHASE = "ST"
+# ═══════════════════════════════════════════════════════════════════════════════
+# END OF USER CONFIGURATION — No changes needed below this line.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
 def _decode_path(value: str) -> str:
     """Strip surrounding quotes left by a non-shell task runner, then URL-decode."""
     return unquote(value.strip("'\""))
@@ -77,6 +96,16 @@ class LmpQueryWorker:
     stages output CSV files and an optional chart to output_path.
     """
 
+    # Peak / off-peak detection heuristic for the enriched_data view.
+    # DuckDB weekday(): Monday=0 … Sunday=6  →  Saturday=5, Sunday=6.
+    PEAK_HOUR_START = 8     # First hour of the peak window (inclusive)
+    PEAK_HOUR_END = 23      # Last hour of the peak window (inclusive)
+    WEEKEND_DAYS = (5, 6)   # Saturday, Sunday
+
+    # Chart rendering defaults
+    CHART_DPI = 150
+    CHART_FIGSIZE = (10, 6)
+
     def __init__(self, duck_db_path: str, output_path: str) -> None:
         """
         Args:
@@ -107,25 +136,12 @@ class LmpQueryWorker:
         print(f"[OK] Loaded tech lookup: {tech_lookup_path}")
         print(f"[OK] Loaded memberships: {memberships_path}")
 
-    def _build_pipeline(self, con: duckdb.DuckDBPyConnection, period_type: str, phase: str) -> None:
-        """
-        Build all intermediate query views for the LMP analysis pipeline.
+    def _build_series_views(
+        self, con: duckdb.DuckDBPyConnection, period_type: str, phase: str
+    ) -> None:
+        """Stage 1: Filter solution data to relevant generation/price/capacity series.
 
-        Steps (mirroring the pipeline in the original query_lmp_data.py):
-          1. Filter fullkeyinfo for Generation, Price Received, Installed Capacity
-          2. Join with data parquet using SeriesId filter
-          3. Join SeriesId data with object names and categories
-          4. Join with period to get StartDate
-          5. Pivot PropertyName to columns
-          6. Add Technology classification from tech lookup
-          7. Calculate revenue and time-based fields
-          8. Map generators to nodes and zones via memberships
-          9. Calculate generation-weighted LMPs by zone
-
-        Args:
-            con:         Active DuckDB connection.
-            period_type: PeriodTypeName filter value (e.g. 'Interval').
-            phase:       PhaseName filter value (e.g. 'ST').
+        Creates views: relevant_series → all_data → combined_data → combined_data_with_dates.
         """
         period_esc = _esc(period_type)
         phase_esc = _esc(phase)
@@ -187,6 +203,11 @@ class LmpQueryWorker:
             JOIN period AS p ON cd.PeriodId = p.PeriodId;
         """)
 
+    def _build_combined_views(self, con: duckdb.DuckDBPyConnection) -> None:
+        """Stage 2: Pivot properties to columns and join technology classification.
+
+        Creates views: pivoted_data → final_data.
+        """
         print("[OK] Step 5: Pivot PropertyName to columns")
         con.execute("""
             CREATE OR REPLACE VIEW pivoted_data AS
@@ -212,18 +233,29 @@ class LmpQueryWorker:
             LEFT JOIN df_tech_lu AS t ON pd.ChildObjectCategoryName = t.PLEXOS;
         """)
 
+    def _build_aggregation_views(self, con: duckdb.DuckDBPyConnection) -> None:
+        """Stage 3: Calculate revenue, map generators to zones, compute gen-weighted LMPs.
+
+        Peak/off-peak classification uses a fixed weekday/hour-range heuristic:
+        weekdays between PEAK_HOUR_START and PEAK_HOUR_END are 'peak',
+        everything else (nights + weekends) is 'offpeak'.
+
+        Creates views: enriched_data → gen_node + node_area → area_data → gen_weighted_prices.
+        """
+        wkend = ", ".join(str(d) for d in self.WEEKEND_DAYS)
+
         print("[OK] Step 7: Calculate revenue and time fields")
-        con.execute("""
+        con.execute(f"""
             CREATE OR REPLACE VIEW enriched_data AS
             SELECT
                 fd.*,
                 fd.Generation * fd.Price_Received AS revenue_est,
                 hour(fd.StartDate) AS hour,
                 weekday(fd.StartDate) AS day_of_week,
-                CASE WHEN weekday(fd.StartDate) IN (5, 6) THEN 'yes' ELSE 'no' END AS weekend,
+                CASE WHEN weekday(fd.StartDate) IN ({wkend}) THEN 'yes' ELSE 'no' END AS weekend,
                 CASE
-                    WHEN weekday(fd.StartDate) IN (5, 6) THEN 'offpeak'
-                    WHEN hour(fd.StartDate) BETWEEN 8 AND 23 THEN 'peak'
+                    WHEN weekday(fd.StartDate) IN ({wkend}) THEN 'offpeak'
+                    WHEN hour(fd.StartDate) BETWEEN {self.PEAK_HOUR_START} AND {self.PEAK_HOUR_END} THEN 'peak'
                     ELSE 'offpeak'
                 END AS peak
             FROM final_data AS fd;
@@ -273,6 +305,12 @@ class LmpQueryWorker:
             GROUP BY 1, 2
             ORDER BY 1, 2;
         """)
+
+    def _build_pipeline(self, con: duckdb.DuckDBPyConnection, period_type: str, phase: str) -> None:
+        """Build the complete LMP analysis pipeline as a sequence of DuckDB views."""
+        self._build_series_views(con, period_type, phase)
+        self._build_combined_views(con)
+        self._build_aggregation_views(con)
 
     def _export_reports(self, con: duckdb.DuckDBPyConnection) -> tuple[str, str]:
         """
@@ -335,7 +373,7 @@ class LmpQueryWorker:
 
         pivot_df = result.pivot(index="Hour", columns="Fuel", values="Generation")
 
-        fig, ax = plt.subplots(figsize=(10, 6), dpi=100)
+        fig, ax = plt.subplots(figsize=self.CHART_FIGSIZE, dpi=self.CHART_DPI)
         pivot_df.plot(kind="line", ax=ax)
         ax.set_title(f"Generation by Fuel — {graph_date}")
         ax.set_xlabel("Hour")
@@ -343,7 +381,7 @@ class LmpQueryWorker:
         ax.legend(title="Fuel")
 
         chart_path = str(Path(self.output_path) / f"gen_by_fuel_{graph_date}.png")
-        plt.savefig(chart_path, dpi=150, bbox_inches="tight")
+        plt.savefig(chart_path, dpi=self.CHART_DPI, bbox_inches="tight")
         plt.close(fig)
         print(f"[OK] Chart saved: {chart_path}")
 
@@ -426,7 +464,7 @@ def main() -> int:
     )
     parser.add_argument(
         "-m", "--memberships-file",
-        default="memberships_data.csv",
+        default=MEMBERSHIPS_FILE,
         help=(
             "Filename of the memberships CSV in output_path, or an absolute path. "
             "Expected columns: parent_class, parent_object, child_class, child_object. "
@@ -435,17 +473,16 @@ def main() -> int:
     )
     parser.add_argument(
         "--period-type",
-        default="Interval",
+        default=PERIOD_TYPE,
         help="PeriodTypeName filter value (default: Interval).",
     )
     parser.add_argument(
         "--phase",
-        default="ST",
+        default=PHASE,
         help="PhaseName filter value (default: ST).",
     )
     parser.add_argument(
         "--graph-date",
-        default=None,
         metavar="YYYY-MM-DD",
         help=(
             "Date for the hourly generation-by-fuel chart (format: YYYY-MM-DD). "

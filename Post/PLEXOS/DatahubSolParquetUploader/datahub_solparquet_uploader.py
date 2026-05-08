@@ -36,6 +36,7 @@ except KeyError:
 DIRECTORY_MAP_PATH = os.environ.get("directory_map_path", "")
 
 
+
 class ModelData:
     """Holds the model ID and local parquet path resolved from the directory mapping."""
 

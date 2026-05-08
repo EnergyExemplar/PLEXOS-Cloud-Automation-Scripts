@@ -29,6 +29,17 @@ except KeyError:
     sys.exit(1)
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# USER CONFIGURATION \u2014 These defaults are used when no command-line arguments are provided.
+# ═══════════════════════════════════════════════════════════════════════════════
+# Number of parallel conversion workers
+WORKERS = 3
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# END OF USER CONFIGURATION — No changes needed below this line.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
 def _decode_path(value: str) -> str:
     """Strip surrounding quotes left by a non-shell task runner, then URL-decode."""
     return unquote(value.strip("'\""))
@@ -126,7 +137,7 @@ def main() -> int:
         required=True,
         help="Folder containing Parquet files. Pass 'simulation_path' to use the simulation_path env var.",
     )
-    parser.add_argument("-w", "--workers", type=int, default=3, help="Parallel workers (default: 3)")
+    parser.add_argument("-w", "--workers", type=int, default=WORKERS, help=f"Parallel workers (default: {WORKERS})")
     args = parser.parse_args()
 
     decoded_folder = _decode_path(args.folder)

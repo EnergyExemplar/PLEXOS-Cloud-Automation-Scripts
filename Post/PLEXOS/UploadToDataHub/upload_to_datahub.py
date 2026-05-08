@@ -29,6 +29,21 @@ except KeyError:
     sys.exit(1)
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# USER CONFIGURATION \u2014 These defaults are used when no command-line arguments are provided.
+# ═══════════════════════════════════════════════════════════════════════════════
+# Glob patterns for files to upload (space-separated list)
+# Example: ["*.csv", "*.parquet"]
+PATTERNS = ["**/*"]
+
+# Create a new DataHub version on upload ("true" or "false")
+VERSIONED = "true"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# END OF USER CONFIGURATION — No changes needed below this line.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
 def _decode_path(value: str) -> str:
     """Strip surrounding quotes left by a non-shell task runner, then URL-decode."""
     return unquote(value.strip("'\""))
@@ -132,13 +147,13 @@ def main() -> int:
     parser.add_argument(
         "-p", "--pattern",
         nargs="+",
-        default=["**/*"],
+        default=PATTERNS,
         help="One or more glob patterns, space-separated in a single flag (e.g. -p '*.csv' '*.parquet'). Default: '**/*' — all files.",
     )
     parser.add_argument(
         "-v", "--versioned",
         type=str,
-        default="true",
+        default=VERSIONED,
         choices=["true", "false"],
         help="Create a new DataHub version on upload (default: true).",
     )

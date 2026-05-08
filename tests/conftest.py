@@ -29,14 +29,22 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 # Pre scripts
 PRE_DOWNLOAD_SCRIPT   = REPO_ROOT / "Pre"  / "PLEXOS" / "DownloadFromDataHub" / "download_from_datahub.py"
 PRE_UPDATE_HORIZON    = REPO_ROOT / "Pre"  / "PLEXOS" / "UpdateHorizon"       / "update_horizon.py"
+PRE_BID_ADDER_GENERATION = REPO_ROOT / "Pre" / "PLEXOS" / "BidadderGeneration" / "bid_adder_generation.py"
+PRE_REPLACE_INPUTS    = REPO_ROOT / "Pre"  / "PLEXOS" / "ReplaceModelInputFiles" / "replace_model_input_files.py"
 PRE_ENABLE_REPORTS    = REPO_ROOT / "Pre"  / "PLEXOS" / "EnableReports"       / "enable_reports.py"
+PRE_EXTEND_WEATHER    = REPO_ROOT / "Pre"  / "PLEXOS" / "ExtendWeatherYears"  / "extend_weather_years.py"
+PRE_SAMPLE_WEATHER    = REPO_ROOT / "Pre"  / "PLEXOS" / "WeatherSample"       / "sample_weather_years.py"
+PRE_CREATE_SENSITIVITY = REPO_ROOT / "Pre" / "PLEXOS" / "CreateSensitivity" / "create_sensitivity.py"
+PRE_ISLAND_NODE        = REPO_ROOT / "Pre" / "PLEXOS" / "IslandScript"       / "island_node.py"
 
 # Post scripts
 NEW_PRE_PARQUET_CSV  = REPO_ROOT / "Pre"  / "PLEXOS" / "ParquetToCsv" / "convert_parquet_to_csv.py"
 NEW_POST_CSV_PARQUET = REPO_ROOT / "Post" / "PLEXOS" / "CsvToParquet" / "convert_csv_to_parquet.py"
+POST_CREATE_CHANGESET = REPO_ROOT / "Post" / "PLEXOS" / "CreateChangeSet"     / "create_changeset.py"
 POST_UPLOAD_SCRIPT   = REPO_ROOT / "Post" / "PLEXOS" / "UploadToDataHub" / "upload_to_datahub.py"
 POST_TS_ANALYSIS          = REPO_ROOT / "Post" / "PLEXOS" / "TimeSeriesComparison"        / "timeseries_comparison.py"
 POST_CLEANUP_SCRIPT       = REPO_ROOT / "Post" / "PLEXOS" / "CleanupFiles"               / "cleanup_files.py"
+POST_CONNECTOR_SOLPARQUET_UPLOADER = REPO_ROOT / "Post" / "PLEXOS" / "DatahubConnectorSolParquetUploader" / "datahub_connector_solparquet_uploader.py"
 POST_SOLPARQUET_UPLOADER  = REPO_ROOT / "Post" / "PLEXOS" / "DatahubSolParquetUploader"  / "datahub_solparquet_uploader.py"
 POST_SOLUTION_DATA_QUERY  = REPO_ROOT / "Post" / "PLEXOS" / "SolutionDataQuery"          / "solution_data_query.py"
 POST_EXTRACT_DIAGNOSTICS  = REPO_ROOT / "Post" / "PLEXOS" / "ExtractDiagnosticsXML"      / "extract_diag_xml.py"
@@ -47,14 +55,16 @@ POST_QUERY_LMP_DATA           = REPO_ROOT / "Post" / "PLEXOS" / "QueryLmpData"  
 POST_WRITE_REPORTED_PROPERTIES  = REPO_ROOT / "Post" / "PLEXOS" / "WriteReportedProperties"   / "write_reported_properties.py"
 POST_UPLOAD_SOLUTION_ZIP_TO_DATAHUB = REPO_ROOT / "Post" / "PLEXOS" / "UploadSolutionZipToDatahub" / "upload_solution_zip_to_datahub.py"
 POST_SEARCH_AND_UPLOAD = REPO_ROOT / "Post" / "PLEXOS" / "SearchAndUpload" / "search_and_upload.py"
+POST_CALIBRATION_EVALUATION = REPO_ROOT / "Post" / "PLEXOS" / "CalibrationEvaluation" / "calibration_evaluation.py"
 
 # Aurora Post scripts
 POST_AURORA_TO_PARQUET    = REPO_ROOT / "Post" / "Aurora" / "AuroraToParquet" / "aurora_to_parquet.py"
 
 # Automation scripts
-AUTO_TS_SCRIPT        = REPO_ROOT / "Automation" / "PLEXOS" / "TimeSeriesComparison" / "timeseries_comparison.py"
-AUTO_DOWNLOAD_SCRIPT  = REPO_ROOT / "Automation" / "PLEXOS" / "DownloadFromDataHub"  / "download_from_datahub.py"
-AUTO_UPLOAD_SCRIPT    = REPO_ROOT / "Automation" / "PLEXOS" / "UploadToDataHub"       / "upload_to_datahub.py"
+AUTO_TS_SCRIPT                  = REPO_ROOT / "Automation" / "PLEXOS" / "TimeSeriesComparison" / "timeseries_comparison.py"
+AUTO_DOWNLOAD_SCRIPT            = REPO_ROOT / "Automation" / "PLEXOS" / "DownloadFromDataHub"  / "download_from_datahub.py"
+AUTO_UPLOAD_SCRIPT              = REPO_ROOT / "Automation" / "PLEXOS" / "UploadToDataHub"       / "upload_to_datahub.py"
+AUTO_DOWNLOAD_SOLUTIONS_SCRIPT  = REPO_ROOT / "Automation" / "PLEXOS" / "DownloadSolutions"    / "download_solutions.py"
 
 # ── Temporary directories for env vars ───────────────────────────────────────
 # Created once per session; scripts that mkdir(exist_ok=True) will reuse them.
@@ -100,11 +110,13 @@ def get_module(key: str):
             # Pre scripts
             "pre_download":        (PRE_DOWNLOAD_SCRIPT,      "pre_download_from_datahub"),
             # Post scripts
+            "create_changeset":    (POST_CREATE_CHANGESET,   "create_changeset"),
             "new_parquet_to_csv":  (NEW_PRE_PARQUET_CSV,      "convert_parquet_to_csv_new"),
             "new_csv_to_parquet":  (NEW_POST_CSV_PARQUET,     "convert_csv_to_parquet_new"),
             "upload_to_datahub":   (POST_UPLOAD_SCRIPT,       "upload_to_datahub"),
             "ts_analysis":         (POST_TS_ANALYSIS,         "timeseries_analysis"),
             "cleanup_files":               (POST_CLEANUP_SCRIPT,       "cleanup_files"),
+            "connector_solparquet_uploader": (POST_CONNECTOR_SOLPARQUET_UPLOADER, "datahub_connector_solparquet_uploader"),
             "solparquet_uploader":         (POST_SOLPARQUET_UPLOADER, "datahub_solparquet_uploader"),
             "solution_data_query":         (POST_SOLUTION_DATA_QUERY, "solution_data_query"),
             "extract_diag_xml":            (POST_EXTRACT_DIAGNOSTICS, "extract_diag_xml"),
@@ -119,11 +131,20 @@ def get_module(key: str):
             "aurora_to_parquet":           (POST_AURORA_TO_PARQUET,   "aurora_to_parquet"),
             # Pre PLEXOS scripts (SDK-dependent)
             "update_horizon":              (PRE_UPDATE_HORIZON,       "update_horizon"),
+            "replace_model_input_files":   (PRE_REPLACE_INPUTS,       "replace_model_input_files"),
             "enable_reports":             (PRE_ENABLE_REPORTS,          "enable_reports"),
+            "extend_weather_years":        (PRE_EXTEND_WEATHER,       "extend_weather_years"),
+            "sample_weather_years":        (PRE_SAMPLE_WEATHER,       "sample_weather_years"),
+            "create_sensitivity":          (PRE_CREATE_SENSITIVITY, "create_sensitivity"),
+            "island_node":                (PRE_ISLAND_NODE,        "island_node"),
             # Automation scripts
-            "ts_auto":             (AUTO_TS_SCRIPT,           "ts_comparison_auto"),
-            "auto_download":       (AUTO_DOWNLOAD_SCRIPT,     "auto_download_from_datahub"),
-            "auto_upload":         (AUTO_UPLOAD_SCRIPT,       "auto_upload_to_datahub"),
+            "ts_auto":                    (AUTO_TS_SCRIPT,                   "ts_comparison_auto"),
+            "auto_download":              (AUTO_DOWNLOAD_SCRIPT,              "auto_download_from_datahub"),
+            "auto_upload":                (AUTO_UPLOAD_SCRIPT,                "auto_upload_to_datahub"),
+            "auto_download_solutions":    (AUTO_DOWNLOAD_SOLUTIONS_SCRIPT,    "auto_download_solutions"),
+            # Calibration loop scripts
+            "bid_adder_generation":       (PRE_BID_ADDER_GENERATION,         "bid_adder_generation"),
+            "calibration_evaluation":     (POST_CALIBRATION_EVALUATION,      "calibration_evaluation"),
         }
         path, name = mapping[key]
         _modules[key] = load_script(path, name)

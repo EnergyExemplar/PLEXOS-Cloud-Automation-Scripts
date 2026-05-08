@@ -36,6 +36,21 @@ EXECUTION_ID = os.environ.get("execution_id", "")
 DIRECTORY_MAP_PATH = os.environ.get("directory_map_path", "")
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# USER CONFIGURATION \u2014 These defaults are used when no command-line arguments are provided.
+# ═══════════════════════════════════════════════════════════════════════════════
+# Glob pattern for diagnostics files to upload
+# Example: "**/*ST*Diagnostics.xml" for ST phase only
+DIAGNOSTICS_PATTERN = "**/*Diagnostics.xml"
+
+# Create a new DataHub version on upload ("true" or "false")
+VERSIONED = "false"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# END OF USER CONFIGURATION — No changes needed below this line.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
 def _decode_path(value: str) -> str:
     """Strip surrounding quotes left by a non-shell task runner, then URL-decode."""
     return unquote(value.strip("'\""))
@@ -215,7 +230,7 @@ def main() -> int:
     )
     parser.add_argument(
         "-pt", "--pattern",
-        default="**/*Diagnostics.xml",
+        default=DIAGNOSTICS_PATTERN,
         help=(
             "Glob pattern for diagnostics files to upload. "
             "Default: '**/*Diagnostics.xml' (all phase diagnostics). "
@@ -225,7 +240,7 @@ def main() -> int:
     parser.add_argument(
         "-v", "--versioned",
         type=str,
-        default="false",
+        default=VERSIONED,
         choices=["true", "false"],
         help="Create a new DataHub version on upload (default: false).",
     )

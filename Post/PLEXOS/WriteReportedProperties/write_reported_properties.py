@@ -34,6 +34,19 @@ except KeyError:
 OUTPUT_PATH = os.environ.get("output_path", "/output")
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# USER CONFIGURATION \u2014 These defaults are used when no command-line arguments are provided.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Name of the output Parquet file for reported properties
+# Example: "flattened_data.parquet" or "custom_report.parquet"
+OUTPUT_FILE = "flattened_data.parquet"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# END OF USER CONFIGURATION — No changes needed below this line.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
 class ReportedPropertiesExporter:
     """Exports PLEXOS reported property key info from DuckDB views to Parquet."""
 
@@ -169,7 +182,7 @@ Examples:
     )
     parser.add_argument(
         "-o", "--output-file",
-        default="flattened_data.parquet",
+        default=OUTPUT_FILE,
         help=(
             "Name of output Parquet file (default: flattened_data.parquet). "
             "Must be a plain filename — no path separators or absolute paths."

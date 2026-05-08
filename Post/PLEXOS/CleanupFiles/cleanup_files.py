@@ -14,6 +14,24 @@ from pathlib import Path
 import shutil
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# USER CONFIGURATION \u2014 These defaults are used when no command-line arguments are provided.
+# ═══════════════════════════════════════════════════════════════════════════════
+# Glob pattern to match files/folders for deletion
+# Example: "*.csv", "temp_*", "Analysis_*"
+PATTERN = "**/*"
+
+# Search subdirectories recursively
+IS_RECURSIVE = False
+
+# Preview deletions without executing
+IS_DRYRUN = False
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# END OF USER CONFIGURATION — No changes needed below this line.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
 def cleanup_files(
     target_path: str,
     pattern: str,
@@ -105,7 +123,7 @@ def main() -> int:
     )
     parser.add_argument(
         "-pt", "--pattern",
-        default="**/*",
+        default=PATTERN,
         help=(
             "Glob pattern to match files/folders (e.g., '*.csv', 'temp_*', 'Analysis_*'). "
             "Use quotes to prevent shell expansion. Defaults to '**/*' (all files including subdirectories)."
@@ -113,12 +131,14 @@ def main() -> int:
     )
     parser.add_argument(
         "-r", "--recursive",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=IS_RECURSIVE,
         help="Search subdirectories recursively.",
     )
     parser.add_argument(
         "--dry-run",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=IS_DRYRUN,
         help="Preview what would be deleted without actually deleting.",
     )
     args = parser.parse_args()

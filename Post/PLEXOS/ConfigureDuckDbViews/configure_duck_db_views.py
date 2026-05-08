@@ -29,6 +29,18 @@ except KeyError:
 DIRECTORY_MAP_PATH = os.environ.get("directory_map_path", "")
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# USER CONFIGURATION \u2014 These defaults are used when no command-line arguments are provided.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Print each CREATE VIEW statement and a 2-row sample query result
+IS_VERBOSE = False
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# END OF USER CONFIGURATION — No changes needed below this line.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
 class DuckViewConfigurator:
     """Creates DuckDB views for all solution subdirectories from the directory mapping."""
 
@@ -178,7 +190,8 @@ def main() -> int:
     )
     parser.add_argument(
         "--verbose",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=IS_VERBOSE,
         help="Print each CREATE VIEW statement and a 2-row sample query result.",
     )
     print(f"\n[OK] Args received: python3 {' '.join(sys.argv)}")

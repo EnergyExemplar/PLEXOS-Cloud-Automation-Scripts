@@ -46,6 +46,18 @@ DIRECTORY_MAP_PATH = os.environ.get("directory_map_path", "")
 SIMULATION_ID = os.environ.get("simulation_id", "")
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# USER CONFIGURATION \u2014 These defaults are used when no command-line arguments are provided.
+# ═══════════════════════════════════════════════════════════════════════════════
+# Glob patterns for ZIP files to upload
+# Example: ["*.zip"] or ["**/*.zip"]
+UPLOAD_PATTERNS = ["**/*.zip"]
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# END OF USER CONFIGURATION — No changes needed below this line.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
 class ModelData:
     """Holds model ID and local solution path resolved from the directory mapping."""
 
@@ -239,7 +251,7 @@ Examples:
     parser.add_argument(
         "-p", "--pattern",
         nargs="+",
-        default=["**/*.zip"],
+        default=UPLOAD_PATTERNS,
         help=(
             "One or more glob patterns for files to upload "
             "(default: **/*.zip). "

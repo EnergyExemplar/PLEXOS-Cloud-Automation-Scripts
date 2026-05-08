@@ -28,6 +28,20 @@ except KeyError:
     sys.exit(1)
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# USER CONFIGURATION \u2014 These defaults are used when no command-line arguments are provided.
+# ═══════════════════════════════════════════════════════════════════════════════
+# Number of parallel conversion workers
+WORKERS = 3
+
+# Parquet compression algorithm: "zstd", "gzip", "snappy", or "none"
+COMPRESSION = "zstd"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# END OF USER CONFIGURATION — No changes needed below this line.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
 def _decode_path(value: str) -> str:
     """Strip surrounding quotes left by a non-shell task runner, then URL-decode."""
     return unquote(value.strip("'\""))
@@ -126,12 +140,12 @@ def main() -> int:
         required=True,
         help="Folder containing CSV files. Pass 'output_path' to use the output_path env var.",
     )
-    parser.add_argument("-w", "--workers", type=int, default=3, help="Parallel workers (default: 3)")
+    parser.add_argument("-w", "--workers", type=int, default=WORKERS, help=f"Parallel workers (default: {WORKERS})")
     parser.add_argument(
         "-c", "--compression",
         choices=["zstd", "gzip", "snappy", "none"],
-        default="zstd",
-        help="Parquet compression algorithm (default: zstd)",
+        default=COMPRESSION,
+        help=f"Parquet compression algorithm (default: {COMPRESSION})",
     )
     args = parser.parse_args()
 

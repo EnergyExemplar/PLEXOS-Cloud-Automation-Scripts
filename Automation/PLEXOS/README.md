@@ -27,6 +27,7 @@ For guidance on when to use a class, see [Creating Custom Automation Scripts](#c
 | **[CsvToParquet](CsvToParquet/)** | Convert CSV to compressed Parquet | ✅ `CsvParquetConverter` class |
 | **[ParquetToCsv](ParquetToCsv/)** | Convert Parquet to CSV | ✅ `ParquetCsvConverter` class |
 | **[TimeSeriesComparison](TimeSeriesComparison/)** | Compare 2-4 time series datasets | ✅ Imports other scripts |
+| **[DownloadSolutions](DownloadSolutions/)** | Download all solutions for a given execution ID | — Standalone functions |
 
 ---
 

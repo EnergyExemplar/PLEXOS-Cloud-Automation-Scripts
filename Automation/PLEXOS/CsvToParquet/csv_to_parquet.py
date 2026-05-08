@@ -11,6 +11,7 @@ from typing import List, Optional
 import pandas as pd
 
 
+
 class CsvParquetConverter:
     """Reusable CSV to Parquet converter for automation scripts."""
     

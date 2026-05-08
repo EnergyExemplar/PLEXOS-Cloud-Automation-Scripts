@@ -20,6 +20,7 @@ This repository contains reusable, ready-to-run automation scripts for PLEXOS an
 - [Prerequisites](#prerequisites)
 - [SDK & CLI Documentation](#sdk--cli-documentation)
 - [Script Design Philosophy](#script-design-philosophy)
+- [User Configuration](#user-configuration)
 - [Minimal Working Example](#minimal-working-example)
 - [Chaining Scripts Together](#chaining-scripts-together)
 - [Troubleshooting](#troubleshooting)
@@ -184,7 +185,6 @@ The [`Documentation/`](Documentation/) folder contains SDK and CLI reference fil
 | File | Description | Key Sections |
 |---|---|---|
 | [`CloudSDK.md`](Documentation/CloudSDK.md) | CloudSDK method signatures, parameter names, and response shapes | `## Datahub` → `datahub.download`, `datahub.upload` |
-| [`PLEXOS_SDK_Methods.md`](Documentation/PLEXOS_SDK_Methods.md) | PLEXOS SDK public method signatures | Full file |
 | [`PLEXOS_SDK_TLDR.md`](Documentation/PLEXOS_SDK_TLDR.md) | PLEXOS SDK quick-reference cheat sheet | Full file |
 | [`Repository_Overview.md`](Documentation/Repository_Overview.md) | Repo structure, script types, design rules, task definition format | Full file |
 
@@ -198,6 +198,34 @@ The [`Documentation/`](Documentation/) folder contains SDK and CLI reference fil
 - **Environment variables for paths and IDs.** Never hardcode.
 - **`argparse` for all script inputs.** Keep interfaces explicit and documented.
 - **Write output to `output_path`.** Everything there is captured automatically.
+
+---
+
+## User Configuration
+
+Most scripts include a **USER CONFIGURATION** block near the top of the file. This section provides a quick reference for the default values that each script uses when the corresponding CLI argument is not provided.
+
+```python
+# ═══════════════════════════════════════════════════════════════════════════════
+# USER CONFIGURATION — These defaults apply when the corresponding CLI flag is omitted.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+PATTERN = "**/*"           # Glob pattern for file matching
+IS_RECURSIVE = False       # Search subdirectories?
+IS_DRYRUN = False          # Preview mode — no actual changes
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# END OF USER CONFIGURATION — No changes needed below this line.
+# ═══════════════════════════════════════════════════════════════════════════════
+```
+
+Each variable corresponds to a CLI argument. To run a script with different values, pass the corresponding CLI arguments:
+
+```bash
+python3 cleanup_files.py -p output_path --pattern "*.csv" --recursive --dry-run
+```
+
+The Arguments table in each script's README lists the available CLI flags and their defaults.
 
 ---
 

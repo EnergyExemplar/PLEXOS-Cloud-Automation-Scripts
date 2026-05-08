@@ -52,6 +52,24 @@ DOWNLOAD_PATH = None
 __all__ = ["TimeSeriesComparator", "DataHubManager"]
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# USER CONFIGURATION — These defaults apply when the corresponding CLI flag is omitted.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Alignment method: "intersection", "union", "use-first-file", "use-last-file"
+ALIGNMENT = "union"
+
+# Missing value strategy: "none", "drop", "forward_fill", "backward_fill", "interpolate"
+HANDLE_MISSING = "none"
+
+# Keep records with zero/unchanged differences
+KEEP_DIFF_UNCHANGED = False
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# END OF USER CONFIGURATION — No changes needed below this line.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
 def _json_safe(obj):
     """Recursively replace NaN/Inf floats with None for valid JSON serialization."""
     if isinstance(obj, float) and not math.isfinite(obj):
@@ -1736,17 +1754,17 @@ Examples:
                        help='Cloud environment name (contact your Energy Exemplar administrator for the correct value)')
     
     # Output configuration
-    parser.add_argument('-ta', '--timestamp-alias', default=None, dest='timestamp_alias',
+    parser.add_argument('-ta', '--timestamp-alias', dest='timestamp_alias',
                        help='Output name for timestamp column (default: _parsed_datetime)')
     
     # Processing options
-    parser.add_argument('-j', '--alignment', default='union', dest='alignment',
+    parser.add_argument('-j', '--alignment', default=ALIGNMENT, dest='alignment',
                        choices=['intersection', 'union', 'use-first-file', 'use-last-file'],
                        help='Alignment method: intersection (matching dates only), union (all dates), use-first-file (keep first file dates), use-last-file (keep last file dates) (default: union)')
-    parser.add_argument('-m', '--handle-missing', default='none', dest='handle_missing',
+    parser.add_argument('-m', '--handle-missing', default=HANDLE_MISSING, dest='handle_missing',
                        choices=['none', 'drop', 'forward_fill', 'backward_fill', 'interpolate'],
                        help='Missing value strategy: none/drop/forward_fill/backward_fill/interpolate (default: none)')
-    parser.add_argument('-k', '--keep-diff-unchanged', dest='keep_diff_unchanged', action='store_true', default=False,
+    parser.add_argument('-k', '--keep-diff-unchanged', dest='keep_diff_unchanged', action=argparse.BooleanOptionalAction, default=KEEP_DIFF_UNCHANGED,
                        help='Keep records with zero/unchanged differences (default: remove them)')
     
     args = parser.parse_args()

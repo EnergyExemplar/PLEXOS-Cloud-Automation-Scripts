@@ -11,6 +11,18 @@ from typing import List, Optional
 import pandas as pd
 
 
+# ═══════════════════════════════════════════════════════════════════════════════
+# USER CONFIGURATION — These defaults apply when the corresponding CLI flag is omitted.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Glob pattern for Parquet files when using --input-dir
+FILE_PATTERN = "**/*.parquet"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# END OF USER CONFIGURATION — No changes needed below this line.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+
 class ParquetCsvConverter:
     """Reusable Parquet to CSV converter for automation scripts."""
     
@@ -128,7 +140,7 @@ Examples:
     parser.add_argument('-o', '--output', help='Output CSV file path')
     parser.add_argument('--input-dir', help='Input directory containing Parquet files')
     parser.add_argument('--output-dir', help='Output directory for CSV files')
-    parser.add_argument('--pattern', default='**/*.parquet', help='Glob pattern for Parquet files (default: **/*.parquet, recurses into subdirectories)')
+    parser.add_argument('--pattern', default=FILE_PATTERN, help='Glob pattern for Parquet files (default: **/*.parquet, recurses into subdirectories)')
     parser.add_argument('-c', '--cli-path', help='CLI path (required if using --upload)')
     parser.add_argument('-e', '--environment', help='Environment (required if using --upload)')
     parser.add_argument('--upload', help='Upload converted files to this DataHub path')
