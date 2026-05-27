@@ -40,205 +40,204 @@ stages:
 # ── Runs on every checkin (push) to release; skipped for scheduled and other non-CI triggers ──
 - stage: Push_To_Public_GitHub
   displayName: Push to Public GitHub
-  condition: |
-    and(
-      succeeded(),
-      eq(variables['Build.Reason'], 'IndividualCI')
-    )
   dependsOn: Set_BuildNumber
   jobs:
-  - job: PushToPublicGitHub
+  - deployment: PushToPublicGitHub
     displayName: Push to Public GitHub Repo
     pool:
       vmImage: $(vmImageName)
-    steps:
-    - checkout: self
-      persistCredentials: true
-      fetchDepth: 0
+    environment: 'PublicGitHubRelease'
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - checkout: self
+            persistCredentials: true
+            fetchDepth: 0
 
-   # 1. Generate token (do this RIGHT BEFORE git operations)
-    - pwsh: |
-        if ($PSVersionTable.PSVersion.Major -lt 7) {
-          throw "PowerShell 7+ is required to import PEM private key. Current version: $($PSVersionTable.PSVersion)"
-        }
+         # 1. Generate token (do this RIGHT BEFORE git operations)
+          - pwsh: |
+              if ($PSVersionTable.PSVersion.Major -lt 7) {
+                throw "PowerShell 7+ is required to import PEM private key. Current version: $($PSVersionTable.PSVersion)"
+              }
 
-        function ConvertTo-Base64Url([byte[]]$bytes) {
-          $b64 = [Convert]::ToBase64String($bytes)
-          $b64 = $b64.TrimEnd('=')
-          $b64 = $b64.Replace('+', '-').Replace('/', '_')
-          return $b64
-        }
+              function ConvertTo-Base64Url([byte[]]$bytes) {
+                $b64 = [Convert]::ToBase64String($bytes)
+                $b64 = $b64.TrimEnd('=')
+                $b64 = $b64.Replace('+', '-').Replace('/', '_')
+                return $b64
+              }
 
-        # GitHub App for PUBLIC repo (EnergyExemplar/PLEXOS-Cloud-Automation-Scripts)
-        $privateKeyPem = ($env:GITHUB_PUBLIC_APP_PRIVATE_KEY ?? '').Trim()
-        
-        if ([string]::IsNullOrWhiteSpace($privateKeyPem)) {
-          throw 'GITHUB_PUBLIC_APP_PRIVATE_KEY is empty.'
-        }
-        
-        # Handle multiple possible formats:
-        # 1. Literal \n strings -> convert to actual newlines
-        if ($privateKeyPem -match '\\n') {
-          Write-Host "Detected escaped newlines, converting..." -ForegroundColor DarkGray
-          $privateKeyPem = $privateKeyPem -replace '\\n', "`n"
-        }
-        # 2. If all on one line, reconstruct proper PEM format
-        elseif (-not ($privateKeyPem -match "`n")) {
-          Write-Host "Detected single-line key, reconstructing PEM format..." -ForegroundColor DarkGray
-          # Extract header, body, and footer
-          if ($privateKeyPem -match '^(-----BEGIN [^-]+ PRIVATE KEY-----)(.+?)(-----END [^-]+ PRIVATE KEY-----)$') {
-            $header = $matches[1]
-            $body = $matches[2]
-            $footer = $matches[3]
-            
-            # Split body into 64-char lines
-            $lines = @()
-            for ($i = 0; $i -lt $body.Length; $i += 64) {
-              $length = [Math]::Min(64, $body.Length - $i)
-              $lines += $body.Substring($i, $length)
-            }
-            
-            $privateKeyPem = "$header`n$($lines -join "`n")`n$footer"
-          } else {
-            Write-Host "##[warning]Cannot parse PEM format from single line"
-          }
-        }
-        
-        # Debug: Check if key starts with proper header
-        if (-not $privateKeyPem.StartsWith('-----BEGIN')) {
-          Write-Host "##[warning]Private key doesn't start with PEM header. First 50 chars: $($privateKeyPem.Substring(0, [Math]::Min(50, $privateKeyPem.Length)))"
-        } else {
-          Write-Host "PEM key format validated" -ForegroundColor Green
-        }
+              # GitHub App for PUBLIC repo (EnergyExemplar/PLEXOS-Cloud-Automation-Scripts)
+              $privateKeyPem = ($env:GITHUB_PUBLIC_APP_PRIVATE_KEY ?? '').Trim()
+              
+              if ([string]::IsNullOrWhiteSpace($privateKeyPem)) {
+                throw 'GITHUB_PUBLIC_APP_PRIVATE_KEY is empty.'
+              }
+              
+              # Handle multiple possible formats:
+              # 1. Literal \n strings -> convert to actual newlines
+              if ($privateKeyPem -match '\\n') {
+                Write-Host "Detected escaped newlines, converting..." -ForegroundColor DarkGray
+                $privateKeyPem = $privateKeyPem -replace '\\n', "`n"
+              }
+              # 2. If all on one line, reconstruct proper PEM format
+              elseif (-not ($privateKeyPem -match "`n")) {
+                Write-Host "Detected single-line key, reconstructing PEM format..." -ForegroundColor DarkGray
+                # Extract header, body, and footer
+                if ($privateKeyPem -match '^(-----BEGIN [^-]+ PRIVATE KEY-----)(.+?)(-----END [^-]+ PRIVATE KEY-----)$') {
+                  $header = $matches[1]
+                  $body = $matches[2]
+                  $footer = $matches[3]
+                  
+                  # Split body into 64-char lines
+                  $lines = @()
+                  for ($i = 0; $i -lt $body.Length; $i += 64) {
+                    $length = [Math]::Min(64, $body.Length - $i)
+                    $lines += $body.Substring($i, $length)
+                  }
+                  
+                  $privateKeyPem = "$header`n$($lines -join "`n")`n$footer"
+                } else {
+                  Write-Host "##[warning]Cannot parse PEM format from single line"
+                }
+              }
+              
+              # Debug: Check if key starts with proper header
+              if (-not $privateKeyPem.StartsWith('-----BEGIN')) {
+                Write-Host "##[warning]Private key doesn't start with PEM header. First 50 chars: $($privateKeyPem.Substring(0, [Math]::Min(50, $privateKeyPem.Length)))"
+              } else {
+                Write-Host "PEM key format validated" -ForegroundColor Green
+              }
 
-        $appId = ($env:GITHUB_PUBLIC_APP_ID ?? '').Trim()
-        if ([string]::IsNullOrWhiteSpace($appId)) {
-          throw 'GITHUB_PUBLIC_APP_ID is empty.'
-        }
+              $appId = ($env:GITHUB_PUBLIC_APP_ID ?? '').Trim()
+              if ([string]::IsNullOrWhiteSpace($appId)) {
+                throw 'GITHUB_PUBLIC_APP_ID is empty.'
+              }
 
-        $installationId = ($env:GITHUB_PUBLIC_APP_INSTALLATION_ID ?? '').Trim()
-        if ([string]::IsNullOrWhiteSpace($installationId)) {
-          throw 'GITHUB_PUBLIC_APP_INSTALLATION_ID is empty.'
-        }
+              $installationId = ($env:GITHUB_PUBLIC_APP_INSTALLATION_ID ?? '').Trim()
+              if ([string]::IsNullOrWhiteSpace($installationId)) {
+                throw 'GITHUB_PUBLIC_APP_INSTALLATION_ID is empty.'
+              }
 
-        $now = [DateTimeOffset]::UtcNow
-        $iat = [int]$now.ToUnixTimeSeconds()
-        $exp = [int]$now.AddMinutes(10).ToUnixTimeSeconds()
+              $now = [DateTimeOffset]::UtcNow
+              $iat = [int]$now.ToUnixTimeSeconds()
+              $exp = [int]$now.AddMinutes(10).ToUnixTimeSeconds()
 
-        $headerJson = '{"alg":"RS256","typ":"JWT"}'
-        $payloadJson = "{`"iat`":$iat,`"exp`":$exp,`"iss`":`"$appId`"}"
+              $headerJson = '{"alg":"RS256","typ":"JWT"}'
+              $payloadJson = "{`"iat`":$iat,`"exp`":$exp,`"iss`":`"$appId`"}"
 
-        $header = ConvertTo-Base64Url ([Text.Encoding]::UTF8.GetBytes($headerJson))
-        $payload = ConvertTo-Base64Url ([Text.Encoding]::UTF8.GetBytes($payloadJson))
-        $unsignedToken = "$header.$payload"
+              $header = ConvertTo-Base64Url ([Text.Encoding]::UTF8.GetBytes($headerJson))
+              $payload = ConvertTo-Base64Url ([Text.Encoding]::UTF8.GetBytes($payloadJson))
+              $unsignedToken = "$header.$payload"
 
-        $rsa = [System.Security.Cryptography.RSA]::Create()
-        
-        try {
-          $rsa.ImportFromPem($privateKeyPem)
-        } catch {
-          Write-Host "##[error]Failed to import PEM key. Error: $_"
-          Write-Host "##[debug]Key length: $($privateKeyPem.Length)"
-          Write-Host "##[debug]Key preview: $($privateKeyPem.Substring(0, [Math]::Min(100, $privateKeyPem.Length)))"
-          throw
-        }
-        $signatureBytes = $rsa.SignData(
-          [Text.Encoding]::UTF8.GetBytes($unsignedToken),
-          [System.Security.Cryptography.HashAlgorithmName]::SHA256,
-          [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
-        )
-        $signature = ConvertTo-Base64Url $signatureBytes
-        $jwtToken = "$unsignedToken.$signature"
+              $rsa = [System.Security.Cryptography.RSA]::Create()
+              
+              try {
+                $rsa.ImportFromPem($privateKeyPem)
+              } catch {
+                Write-Host "##[error]Failed to import PEM key. Error: $_"
+                Write-Host "##[debug]Key length: $($privateKeyPem.Length)"
+                Write-Host "##[debug]Key preview: $($privateKeyPem.Substring(0, [Math]::Min(100, $privateKeyPem.Length)))"
+                throw
+              }
+              $signatureBytes = $rsa.SignData(
+                [Text.Encoding]::UTF8.GetBytes($unsignedToken),
+                [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+                [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
+              )
+              $signature = ConvertTo-Base64Url $signatureBytes
+              $jwtToken = "$unsignedToken.$signature"
 
-        $headers = @{
-          Authorization = "Bearer $jwtToken"
-          Accept        = 'application/vnd.github+json'
-        }
-        $uri = "https://api.github.com/app/installations/$installationId/access_tokens"
+              $headers = @{
+                Authorization = "Bearer $jwtToken"
+                Accept        = 'application/vnd.github+json'
+              }
+              $uri = "https://api.github.com/app/installations/$installationId/access_tokens"
 
-        $response = Invoke-RestMethod -Method Post -Uri $uri -Headers $headers
-        if (-not $response -or [string]::IsNullOrWhiteSpace($response.token)) {
-          throw 'GitHub installation token response did not include token.'
-        }
+              $response = Invoke-RestMethod -Method Post -Uri $uri -Headers $headers
+              if (-not $response -or [string]::IsNullOrWhiteSpace($response.token)) {
+                throw 'GitHub installation token response did not include token.'
+              }
 
-        Write-Host "##vso[task.setvariable variable=GITHUB_TOKEN;issecret=true]$($response.token)"
-        Write-Host 'Token generated successfully'
-      displayName: 'Generate GitHub App Token (Public Repo)'
-      env:
-        GITHUB_PUBLIC_APP_PRIVATE_KEY: $(GITHUB_PUBLIC_APP_PRIVATE_KEY)
-        GITHUB_PUBLIC_APP_ID: $(GITHUB_PUBLIC_APP_ID)
-        GITHUB_PUBLIC_APP_INSTALLATION_ID: $(GITHUB_PUBLIC_APP_INSTALLATION_ID)
+              Write-Host "##vso[task.setvariable variable=GITHUB_TOKEN;issecret=true]$($response.token)"
+              Write-Host 'Token generated successfully'
+            displayName: 'Generate GitHub App Token (Public Repo)'
+            env:
+              GITHUB_PUBLIC_APP_PRIVATE_KEY: $(GITHUB_PUBLIC_APP_PRIVATE_KEY)
+              GITHUB_PUBLIC_APP_ID: $(GITHUB_PUBLIC_APP_ID)
+              GITHUB_PUBLIC_APP_INSTALLATION_ID: $(GITHUB_PUBLIC_APP_INSTALLATION_ID)
 
-    # 2. Clear any cached credentials
-    - pwsh: |
-        git config --global --unset credential.helper 2>$null
-        git credential-cache exit 2>$null
-      displayName: 'Clear Git Credentials'
+          # 2. Clear any cached credentials
+          - pwsh: |
+              git config --global --unset credential.helper 2>$null
+              git credential-cache exit 2>$null
+            displayName: 'Clear Git Credentials'
 
-    # 3. Configure git with token
-    - pwsh: |
-        git config --global user.name "azure-bot[bot]"
-        git config --global user.email "azure-bot[bot]@users.noreply.github.com"
-        git config --global url."https://x-access-token:$env:GITHUB_TOKEN@github.com/".insteadOf "https://github.com/"
-      displayName: 'Configure Git'
-      env:
-        GITHUB_TOKEN: $(GITHUB_TOKEN)
+          # 3. Configure git with token
+          - pwsh: |
+              git config --global user.name "azure-bot[bot]"
+              git config --global user.email "azure-bot[bot]@users.noreply.github.com"
+              git config --global url."https://x-access-token:$env:GITHUB_TOKEN@github.com/".insteadOf "https://github.com/"
+            displayName: 'Configure Git'
+            env:
+              GITHUB_TOKEN: $(GITHUB_TOKEN)
 
-    # 4. Now your git operations
-    - pwsh: |
-        git remote -v
-        git fetch origin
-        git status
-      displayName: 'Git Operations'
-      env:
-        GITHUB_TOKEN: $(GITHUB_TOKEN)
+          # 4. Now your git operations
+          - pwsh: |
+              git remote -v
+              git fetch origin
+              git status
+            displayName: 'Git Operations'
+            env:
+              GITHUB_TOKEN: $(GITHUB_TOKEN)
 
-    - task: PowerShell@2
-      displayName: 'Push to Public GitHub master'
-      env:
-        GITHUB_TOKEN: $(GITHUB_TOKEN)
-      inputs:
-        targetType: 'inline'
-        script: |
-          $repoUrl = "https://x-access-token:$($env:GITHUB_TOKEN)@github.com/EnergyExemplar/PLEXOS-Cloud-Automation-Scripts"          
-          git remote add public $repoUrl
+          - task: PowerShell@2
+            displayName: 'Push to Public GitHub master'
+            env:
+              GITHUB_TOKEN: $(GITHUB_TOKEN)
+            inputs:
+              targetType: 'inline'
+              script: |
+                $repoUrl = "https://x-access-token:$($env:GITHUB_TOKEN)@github.com/EnergyExemplar/PLEXOS-Cloud-Automation-Scripts"          
+                git remote add public $repoUrl
 
-          # Ensure we are on the LATEST origin/release (reverse sync may have added commits after this pipeline was triggered)
-          git fetch origin release
-          git reset --hard origin/release
-          Write-Host "[OK] Reset to latest origin/release: $(git rev-parse HEAD)"
+                # Ensure we are on the LATEST origin/release (reverse sync may have added commits after this pipeline was triggered)
+                git fetch origin release
+                git reset --hard origin/release
+                Write-Host "[OK] Reset to latest origin/release: $(git rev-parse HEAD)"
 
-          # Fetch public/master so FETCH_HEAD is set for the squash commit parent and diff check.
-          # Note: we do NOT check git ancestry here because origin/release is a squash commit
-          # (created via commit-tree parented to AB_release) and will never contain public commit
-          # SHAs in its history. The push itself is always a fast-forward because the squash
-          # commit is constructed with FETCH_HEAD as its parent (see commit-tree below).
-          git fetch public master
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "##vso[task.logissue type=error]Failed to fetch from public GitHub. Check GITHUB_REPO_URL."
-            exit 1
-          }
+                # Fetch public/master so FETCH_HEAD is set for the squash commit parent and diff check.
+                # Note: we do NOT check git ancestry here because origin/release is a squash commit
+                # (created via commit-tree parented to AB_release) and will never contain public commit
+                # SHAs in its history. The push itself is always a fast-forward because the squash
+                # commit is constructed with FETCH_HEAD as its parent (see commit-tree below).
+                git fetch public master
+                if ($LASTEXITCODE -ne 0) {
+                  Write-Host "##vso[task.logissue type=error]Failed to fetch from public GitHub. Check GITHUB_REPO_URL."
+                  exit 1
+                }
 
-          # Check if there are actually any changes to publish
-          git diff --quiet FETCH_HEAD HEAD
-          if ($LASTEXITCODE -eq 0) {
-            Write-Host "ℹ️  No changes between internal release and public/master — nothing to push."
-            exit 0
-          }
+                # Check if there are actually any changes to publish
+                git diff --quiet FETCH_HEAD HEAD
+                if ($LASTEXITCODE -eq 0) {
+                  Write-Host "ℹ️  No changes between internal release and public/master — nothing to push."
+                  exit 0
+                }
 
-          # Build a single squash commit directly on top of public/master (no temp branch needed).
-          # git commit-tree takes the full tree of internal HEAD and parents it to FETCH_HEAD,
-          # producing one commit that contains all changes as a single delta.
-          $version = $env:BUILD_BUILDNUMBER
-          $tree = git rev-parse "HEAD^{tree}"
-          $squashCommit = git commit-tree $tree -p FETCH_HEAD -m "Published scripts / Enhancements for public repo"
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "##vso[task.logissue type=error]Failed to create squash commit."
-            exit 1
-          }
+                # Build a single squash commit directly on top of public/master (no temp branch needed).
+                # git commit-tree takes the full tree of internal HEAD and parents it to FETCH_HEAD,
+                # producing one commit that contains all changes as a single delta.
+                $version = $env:BUILD_BUILDNUMBER
+                $tree = git rev-parse "HEAD^{tree}"
+                $squashCommit = git commit-tree $tree -p FETCH_HEAD -m "Published scripts / Enhancements for public repo"
+                if ($LASTEXITCODE -ne 0) {
+                  Write-Host "##vso[task.logissue type=error]Failed to create squash commit."
+                  exit 1
+                }
 
-          git push public "${squashCommit}:refs/heads/master"
-          Write-Host "✅ Successfully squash-merged and pushed to public GitHub master (commit $squashCommit)"
+                git push public "${squashCommit}:refs/heads/master"
+                Write-Host "✅ Successfully squash-merged and pushed to public GitHub master (commit $squashCommit)"
 
 # ── Runs on scheduled trigger or manual trigger ──
 - stage: Reverse_Sync_From_Public
