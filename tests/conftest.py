@@ -65,6 +65,8 @@ AUTO_TS_SCRIPT                  = REPO_ROOT / "Automation" / "PLEXOS" / "TimeSer
 AUTO_DOWNLOAD_SCRIPT            = REPO_ROOT / "Automation" / "PLEXOS" / "DownloadFromDataHub"  / "download_from_datahub.py"
 AUTO_UPLOAD_SCRIPT              = REPO_ROOT / "Automation" / "PLEXOS" / "UploadToDataHub"       / "upload_to_datahub.py"
 AUTO_DOWNLOAD_SOLUTIONS_SCRIPT  = REPO_ROOT / "Automation" / "PLEXOS" / "DownloadSolutions"    / "download_solutions.py"
+AUTO_DEEP_LINK_SCRIPT           = REPO_ROOT / "Automation" / "PLEXOS" / "DatahubDeepLink"      / "datahub_deep_link.py"
+AUTO_DEEPLINK_DOWNLOAD_SCRIPT   = REPO_ROOT / "Automation" / "PLEXOS" / "DatahubDeepLink"      / "deep_link_http_download.py"
 
 # ── Temporary directories for env vars ───────────────────────────────────────
 # Created once per session; scripts that mkdir(exist_ok=True) will reuse them.
@@ -142,6 +144,8 @@ def get_module(key: str):
             "auto_download":              (AUTO_DOWNLOAD_SCRIPT,              "auto_download_from_datahub"),
             "auto_upload":                (AUTO_UPLOAD_SCRIPT,                "auto_upload_to_datahub"),
             "auto_download_solutions":    (AUTO_DOWNLOAD_SOLUTIONS_SCRIPT,    "auto_download_solutions"),
+            "auto_deep_link":             (AUTO_DEEP_LINK_SCRIPT,             "auto_deep_link"),
+            "auto_deeplink_download":     (AUTO_DEEPLINK_DOWNLOAD_SCRIPT,     "auto_deeplink_download"),
             # Calibration loop scripts
             "bid_adder_generation":       (PRE_BID_ADDER_GENERATION,         "bid_adder_generation"),
             "calibration_evaluation":     (POST_CALIBRATION_EVALUATION,      "calibration_evaluation"),

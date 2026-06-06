@@ -128,3 +128,12 @@ python Post/Aurora/MyScriptName/my_script_name.py --input-path /test/data
 | Script | Description | Location |
 |--------|-------------|----------|
 | *(none yet — [contribute one!](#contributing-new-automation-scripts))* | | |
+
+<!-- docgen:workflows:start -->
+## Available Workflows
+
+End-to-end workflow guides showing how scripts chain together for common automation scenarios.
+
+- [Convert Aurora solution tables to Parquet and publish them to DataHub](Workflows/aurora-to-parquet-to-upload-to-data-hub.md)
+
+<!-- docgen:workflows:end -->

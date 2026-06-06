@@ -44,13 +44,13 @@ When a connector is created, the remote path is automatically prefixed with the 
 | `-r, --remote-path` | Base DataHub remote folder. Model ID and timestamp are appended automatically |
 | `--connector-name` | Connector name to create before upload and delete afterward |
 | `--connector-type` | Connector type: `AzureBlob` or `AmazonS3` |
-| `--auth-type` | Auth type: `ConnectionString`, `Token`, `SharedKey` (AzureBlob); `AccountCreds`, `AssumeRole`, `SharedKey` (AmazonS3) |
+| `--auth-type` | Auth type: `ConnectionString`, `Token`, `SharedKey`, `ServicePrincipal` (AzureBlob); `AccountCreds`, `AssumeRole`, `SharedKey` (AmazonS3) |
 
 ### Connector Parameters (optional; supply as needed for chosen auth type)
 
 | Argument | Used By |
 |---|---|
-| `--service-uri` | AzureBlob (Token, SharedKey) |
+| `--service-uri` | AzureBlob (Token, SharedKey, ServicePrincipal) |
 | `--account-name` | AzureBlob (SharedKey) |
 | `--container-name` | AzureBlob (all auth types) |
 | `--region` | AmazonS3 (all auth types) |
@@ -58,6 +58,8 @@ When a connector is created, the remote path is automatically prefixed with the 
 | `--role-arn` | AmazonS3 (AssumeRole) |
 | `--session-name` | AmazonS3 (AssumeRole) |
 | `--service-endpoint-url` | AzureBlob (rare) |
+| `--tenant-id` | AzureBlob (ServicePrincipal) |
+| `--client-id` | AzureBlob (ServicePrincipal) |
 
 ### Secret Variable Name Arguments (optional; used to resolve sensitive values)
 
@@ -72,6 +74,7 @@ These flags are resolved using `os.getenv(<SECRET_NAME>)`.
 | `--secret-name-s3-access-key` | AmazonS3 (AccountCreds, AssumeRole, SharedKey) |
 | `--secret-name-s3-secret-key` | AmazonS3 (AccountCreds, AssumeRole, SharedKey) |
 | `--secret-name-session-token` | AmazonS3 (SharedKey) |
+| `--secret-name-client-secret` | AzureBlob (ServicePrincipal) |
 
 ### Connector/Auth Validation Matrix
 
@@ -84,6 +87,7 @@ The script validates connector/auth combinations and required arguments before a
 | `ConnectionString` | `--secret-name-connection-string`, `--container-name` |
 | `Token` | `--secret-name-sas-token`, `--service-uri`, `--container-name` |
 | `SharedKey` | `--service-uri`, `--account-name`, `--secret-name-account-key`, `--container-name` |
+| `ServicePrincipal` | `--tenant-id`, `--client-id`, `--secret-name-client-secret`, `--service-uri`, `--container-name` |
 
 **AmazonS3 Connector**
 
@@ -299,6 +303,34 @@ Use simulation task JSON with `Secrets` so the platform injects environment vari
       { "SecretKey": "S3-session-token-post", "VariableName": "S3_SESSION_TOKEN" }
     ],
     "arguments": "python3 datahub_connector_solparquet_uploader.py --remote-path PostScript_v1/Solutions --connector-name ENTER_CONNECTOR_NAME --connector-type AmazonS3 --auth-type SharedKey --secret-name-s3-access-key S3_TEMP_ACCESS_KEY --secret-name-s3-secret-key S3_TEMP_SECRET_KEY --secret-name-session-token S3_SESSION_TOKEN --region ap-southeast-2 --bucket-name YOUR_BUCKET_NAME",
+    "continueOnError": true,
+    "executionOrder": 1,
+    "appliesTo": []
+  }
+]
+```
+
+### AzureBlob + ServicePrincipal
+
+```json
+"simulationTasks": [
+  {
+    "name": "Azure Blob Connector Parquet Upload (ServicePrincipal)",
+    "files": [
+      {
+        "path": "Anurag/Scripts/requirements.txt",
+        "version": null
+      },
+      {
+        "path": "Anurag/Scripts/datahub_connector_solparquet_uploader.py",
+        "version": null
+      }
+    ],
+    "taskType": "POST",
+    "Secrets": [
+      { "SecretKey": "Blob-sp-client-secret-post", "VariableName": "BLOB_SP_CLIENT_SECRET" }
+    ],
+    "arguments": "python3 datahub_connector_solparquet_uploader.py --remote-path PostOperation/Solutions --connector-name ENTER_CONNECTOR_NAME --connector-type AzureBlob --auth-type ServicePrincipal --tenant-id YOUR_TENANT_ID --client-id YOUR_CLIENT_ID --secret-name-client-secret BLOB_SP_CLIENT_SECRET --service-uri https://exampleaccount.blob.core.windows.net --container-name YOUR_CONTAINER_NAME",
     "continueOnError": true,
     "executionOrder": 1,
     "appliesTo": []

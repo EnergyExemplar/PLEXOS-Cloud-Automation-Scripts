@@ -28,6 +28,7 @@ For guidance on when to use a class, see [Creating Custom Automation Scripts](#c
 | **[ParquetToCsv](ParquetToCsv/)** | Convert Parquet to CSV | ✅ `ParquetCsvConverter` class |
 | **[TimeSeriesComparison](TimeSeriesComparison/)** | Compare 2-4 time series datasets | ✅ Imports other scripts |
 | **[DownloadSolutions](DownloadSolutions/)** | Download all solutions for a given execution ID | — Standalone functions |
+| **[DatahubDeepLink](DatahubDeepLink/)** | Create, list, download, and delete Datahub deep links | ✅ `DatahubDeepLinkManager`, `DeepLinkDownloader`, `DeepLinkBatchDownloader` classes |
 
 ---
 

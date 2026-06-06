@@ -137,7 +137,7 @@ python -m pytest Pre/PLEXOS/MyScriptName/test_my_script_name.py
 | TimeSeriesComparison | Compares 2–4 time-series files and writes statistical results, aligned data, and 3-panel plots to the output directory | [Post/PLEXOS/TimeSeriesComparison/](Post/PLEXOS/TimeSeriesComparison/) |
 | UploadToDataHub | Uploads files from a local folder to a specific DataHub path with configurable glob pattern and versioning | [Post/PLEXOS/UploadToDataHub/](Post/PLEXOS/UploadToDataHub/) |
 | SearchAndUpload | Finds a file by name or glob pattern (recursively, including inside ZIP archives), stages it to `output_path`, converts CSV to Parquet, and optionally uploads to a DataHub folder in one step | [Post/PLEXOS/SearchAndUpload/](Post/PLEXOS/SearchAndUpload/) |
-| DatahubConnectorSolParquetUploader | Creates a temporary DataHub connector, uploads all `*.parquet` files for a simulation solution using the directory mapping JSON, and deletes the connector after upload. Script file: `datahub_connector_solparquet_uploader.py` | [Post/PLEXOS/DatahubConnectorSolParquetUploader/](Post/PLEXOS/DatahubConnectorSolParquetUploader/) |
+| DatahubConnectorSolParquetUploader | Creates a temporary DataHub connector, uploads all `*.parquet` files for a simulation solution using the directory mapping JSON, and deletes the connector after upload; supports AzureBlob (ConnectionString, Token, SharedKey, ServicePrincipal) and AmazonS3 (AccountCreds, AssumeRole, SharedKey) auth types. Script file: `datahub_connector_solparquet_uploader.py` | [Post/PLEXOS/DatahubConnectorSolParquetUploader/](Post/PLEXOS/DatahubConnectorSolParquetUploader/) |
 | DatahubSolParquetUploader | Uploads all `*.parquet` files for a simulation solution to DataHub; reads the local parquet path and model ID from the directory mapping JSON and builds a timestamped remote path | [Post/PLEXOS/DatahubSolParquetUploader/](Post/PLEXOS/DatahubSolParquetUploader/) |
 | SolutionDataQuery | Builds a filtered joined solution parquet from model outputs (FullKeyInfo + data + Period) using DuckDB; supports case-insensitive filters with wildcard matching on Collection, Property, Object, and Category; stages result to `output_path` for automatic platform upload | [Post/PLEXOS/SolutionDataQuery/](Post/PLEXOS/SolutionDataQuery/) |
 | ExtractDiagnosticsXML | Uploads PLEXOS diagnostics XML files from the simulation directory to a configurable DataHub path with support for phase-specific glob patterns | [Post/PLEXOS/ExtractDiagnosticsXML/](Post/PLEXOS/ExtractDiagnosticsXML/) |
@@ -162,3 +162,33 @@ For local workflows outside of cloud simulation context, see the **[Automation S
 | DownloadSolutions | Downloads all solutions for a given execution ID; lists simulations, resolves solution IDs from ModelIdentifiers, and downloads each solution into a per-solution subfolder | [Automation/PLEXOS/DownloadSolutions/](Automation/PLEXOS/DownloadSolutions/) |
 
 > **Note:** Automation scripts are self-contained — they do **not** rely on platform environment variables. All configuration is passed as explicit CLI arguments. Some scripts expose importable classes for use by other automation scripts. See the [Automation README](Automation/PLEXOS/) for details.
+
+<!-- docgen:workflows:start -->
+## Available Workflows
+
+End-to-end workflow guides showing how scripts chain together for common automation scenarios.
+
+- [Archive PLEXOS Diagnostics XML and Store a Single ZIP in DataHub](Workflows/extract-diagnostics-xml-to-zip-diagnostics.md)
+- [Iterative bid adder calibration using net load inputs and price convergence checks](Workflows/bidadder-generation-to-calibration-evaluation.md)
+- [Compare time series outputs and publish the analysis to DataHub](Workflows/time-series-comparison-to-upload-to-data-hub.md)
+- [Export PLEXOS reported properties to Parquet using DuckDB views](Workflows/configure-duck-db-views-to-write-reported-properties.md)
+- [Export PLEXOS reported properties to Parquet, publish to DataHub, and remove staged outputs](Workflows/configure-duck-db-views-to-write-reported-properties-to-upload-to-data-hub-to-cleanup-files.md)
+- [Generate generation weighted LMP reports from PLEXOS results and upload them to DataHub](Workflows/configure-duck-db-views-to-query-write-memberships-to-query-lmp-data-to-upload-to-data-hub.md)
+- [Post-Simulation Results Conversion, DataHub Upload, and CSV Cleanup](Workflows/csv-to-parquet-to-upload-to-data-hub-to-cleanup-files.md)
+- [Convert Aurora solution tables to Parquet and publish them to DataHub](Workflows/aurora-to-parquet-to-upload-to-data-hub.md)
+- [Convert PLEXOS CSV outputs, validate against a baseline, and publish results to DataHub](Workflows/csv-to-parquet-to-time-series-comparison-to-upload-to-data-hub.md)
+- [Convert PLEXOS CSV outputs to Parquet and publish results to DataHub](Workflows/csv-to-parquet-to-upload-to-data-hub.md)
+- [Download DataHub Parquet Inputs and Convert Them to CSV for PLEXOS Preprocessing](Workflows/download-from-data-hub-to-parquet-to-csv.md)
+- [Update a PLEXOS model input by downloading a DataHub file and replacing the assigned timeseries](Workflows/download-from-data-hub-to-replace-model-input-files.md)
+- [Export PLEXOS Model Memberships and Upload the CSV to DataHub](Workflows/query-write-memberships-to-upload-to-data-hub.md)
+- [Stage filtered PLEXOS solution data and upload it to DataHub](Workflows/solution-data-query-to-upload-to-data-hub.md)
+- [Post simulation results upload with CSV to Parquet conversion and cleanup](Workflows/search-and-upload-to-cleanup-files.md)
+- [Export PLEXOS Model Memberships, Convert to Parquet, Upload to DataHub, and Clean Up Outputs](Workflows/query-write-memberships-to-csv-to-parquet-to-upload-to-data-hub-to-cleanup-files.md)
+- [Generate sampled weather year inputs and register them in a PLEXOS model](Workflows/weather-sample-to-extend-weather-years.md)
+- [Stage PLEXOS Results, Upload to DataHub, and Clean Up Staged Outputs](Workflows/search-and-upload-to-upload-to-data-hub-to-cleanup-files.md)
+- [Compare time series outputs against a baseline, publish the analysis to DataHub, and clean up run artifacts](Workflows/time-series-comparison-to-upload-to-data-hub-to-cleanup-files.md)
+- [Upload PLEXOS Solution ZIP Outputs to DataHub and Remove Staged ZIP Files](Workflows/upload-solution-zip-to-datahub-to-cleanup-files.md)
+- [Preserve PLEXOS Diagnostics and Publish Post-Simulation Outputs to DataHub](Workflows/extract-diagnostics-xml-to-upload-to-data-hub.md)
+- [Generate generation weighted LMP reports and an hourly generation chart from PLEXOS solution parquet](Workflows/configure-duck-db-views-to-query-write-memberships-to-query-lmp-data.md)
+
+<!-- docgen:workflows:end -->

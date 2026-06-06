@@ -17,3 +17,7 @@
 /Pre/PLEXOS/DownloadFromDataHub/__pycache__
 /Pre/PLEXOS/ParquetToCsv/__pycache__/convert_parquet_to_csv.cpython-313.pyc
 *.pyc
+my_download/
+test_download/
+test_download2/
+test_download3/

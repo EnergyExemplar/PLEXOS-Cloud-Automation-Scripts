@@ -82,6 +82,9 @@ class ConnectorRequest:
     role_arn: str | None = None
     session_name: str | None = None
     service_endpoint_url: str | None = None
+    tenant_id: str | None = None
+    client_id: str | None = None
+    client_secret: str | None = None
 
 
 class DatahubConnectorManager:
@@ -103,7 +106,7 @@ class DatahubConnectorManager:
         msg = getattr(response, "Message", None)
         return str(msg) if msg else ""
 
-    def _build_connector_kwargs(self, request: ConnectorRequest) -> dict[str, str | None]:
+    def _build_connector_kwargs(self, request: ConnectorRequest) -> dict[str, str | bool | None]:
         """Build create_connector kwargs using values directly (no secret extraction)."""
         return {
             "name": request.name,
@@ -123,12 +126,18 @@ class DatahubConnectorManager:
             "role_arn": request.role_arn,
             "session_name": request.session_name,
             "service_endpoint_url": request.service_endpoint_url,
+            "tenant_id": request.tenant_id,
+            "client_id": request.client_id,
+            "client_secret": request.client_secret,
             "print_message": False,
         }
 
     def create_connector(self, request: ConnectorRequest) -> bool:
         """Create connector and return True only on success."""
-        response = self.sdk.datahub.create_connector(**self._build_connector_kwargs(request))
+        all_kwargs = self._build_connector_kwargs(request)
+        # Remove None values — only send params that are actually set for this connector type.
+        kwargs = {k: v for k, v in all_kwargs.items() if v is not None}
+        response = self.sdk.datahub.create_connector(**kwargs)
         data = SDKBase.get_response_data(response)
         if data is None:
             print(f"[FAIL] Failed to create connector '{request.name}'.")
@@ -378,6 +387,7 @@ CONNECTOR_AUTH_REQUIRED_ARGS: dict[tuple[str, str], list[str]] = {
     ("AmazonS3", "AccountCreds"): ["s3_access_key_secret_name", "s3_secret_key_secret_name", "region", "bucket_name"],
     ("AmazonS3", "AssumeRole"): ["s3_access_key_secret_name", "s3_secret_key_secret_name", "role_arn", "session_name", "region", "bucket_name"],
     ("AmazonS3", "SharedKey"): ["s3_access_key_secret_name", "s3_secret_key_secret_name", "session_token_secret_name", "region", "bucket_name"],
+    ("AzureBlob", "ServicePrincipal"): ["tenant_id", "client_id", "client_secret_secret_name", "service_uri", "container_name"],
 }
 
 ARG_FLAG_MAP: dict[str, str] = {
@@ -394,6 +404,9 @@ ARG_FLAG_MAP: dict[str, str] = {
     "session_token_secret_name": "--secret-name-session-token",
     "role_arn": "--role-arn",
     "session_name": "--session-name",
+    "tenant_id": "--tenant-id",
+    "client_id": "--client-id",
+    "client_secret_secret_name": "--secret-name-client-secret",
 }
 
 
@@ -451,7 +464,7 @@ def main() -> int:
     parser.add_argument(
         "--auth-type",
         required=True,
-        choices=["ConnectionString", "Token", "SharedKey", "AccountCreds", "AssumeRole"],
+        choices=["ConnectionString", "Token", "SharedKey", "AccountCreds", "AssumeRole", "ServicePrincipal"],
         help="Connector authentication type.",
     )
 
@@ -464,6 +477,8 @@ def main() -> int:
     parser.add_argument("--role-arn")
     parser.add_argument("--session-name")
     parser.add_argument("--service-endpoint-url")
+    parser.add_argument("--tenant-id", dest="tenant_id")
+    parser.add_argument("--client-id", dest="client_id")
 
     # Token and credential inputs must be environment variable names.
     parser.add_argument(
@@ -490,6 +505,10 @@ def main() -> int:
         "--secret-name-session-token",
         dest="session_token_secret_name",
     )
+    parser.add_argument(
+        "--secret-name-client-secret",
+        dest="client_secret_secret_name",
+    )
 
     print(f"\n[OK] Args received: python3 {' '.join(sys.argv)}")
     args = parser.parse_args()
@@ -509,6 +528,7 @@ def main() -> int:
         "s3_access_key_secret_name": "--secret-name-s3-access-key",
         "s3_secret_key_secret_name": "--secret-name-s3-secret-key",
         "session_token_secret_name": "--secret-name-session-token",
+        "client_secret_secret_name": "--secret-name-client-secret",
     }
 
     resolved_secret_values: dict[str, str | None] = {
@@ -518,6 +538,7 @@ def main() -> int:
         "s3_access_key": None,
         "s3_secret_key": None,
         "session_token": None,
+        "client_secret": None,
     }
 
     for attr_name, flag_name in secret_arg_map.items():
@@ -550,6 +571,9 @@ def main() -> int:
         role_arn=_decode_path(args.role_arn) if args.role_arn else None,
         session_name=_decode_path(args.session_name) if args.session_name else None,
         service_endpoint_url=_decode_path(args.service_endpoint_url) if args.service_endpoint_url else None,
+        tenant_id=_decode_path(args.tenant_id) if args.tenant_id else None,
+        client_id=_decode_path(args.client_id) if args.client_id else None,
+        client_secret=resolved_secret_values["client_secret"],
     )
 
     try:

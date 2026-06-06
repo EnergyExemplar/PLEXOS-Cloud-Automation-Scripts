@@ -36,10 +36,41 @@ class TestReadMapping:
 
 
 class TestDatahubConnectorManager:
+    # Valid create_connector parameter names from the SDK signature (eecloud v1.5.2621.473).
+    # If the SDK changes, update this set to catch contract mismatches in tests below.
+    VALID_CREATE_CONNECTOR_PARAMS = frozenset({
+        "name", "connector_type", "auth_type", "service_uri", "connection_string",
+        "account_name", "account_key", "sas_token", "container_name",
+        "s3_access_key", "s3_secret_key", "region", "bucket_name",
+        "session_token", "role_arn", "session_name", "service_endpoint_url",
+        "repository", "branch", "personal_access_token", "owner", "base_url",
+        "organization_url", "project", "tenant_id", "client_id", "client_secret",
+        "print_message",
+    })
+
     @pytest.mark.skip(reason="Secret extraction via SDK secrets commands is currently commented out in implementation.")
     def test_extract_secret_value_uses_secrets_commands(self):
         # Placeholder kept intentionally to preserve planned coverage when feature is re-enabled.
         raise NotImplementedError("Enable this test when secret extraction implementation is restored.")
+
+    def test_build_connector_kwargs_only_contains_valid_sdk_params(self):
+        """Contract test: every key from _build_connector_kwargs must be a valid
+        create_connector parameter. Catches typos or unsupported kwargs before runtime."""
+        sdk = MagicMock()
+        manager = MOD.DatahubConnectorManager(sdk)
+        request = MOD.ConnectorRequest(
+            name="contract-test",
+            connector_type="AzureBlob",
+            auth_type="ServicePrincipal",
+            tenant_id="tid",
+            client_id="cid",
+            client_secret="csec",
+            service_uri="https://example.blob.core.windows.net",
+            container_name="container",
+        )
+        kwargs = manager._build_connector_kwargs(request)
+        invalid_keys = set(kwargs.keys()) - self.VALID_CREATE_CONNECTOR_PARAMS
+        assert not invalid_keys, f"Unexpected kwargs not in SDK signature: {invalid_keys}"
 
     def test_create_connector_uses_expected_sdk_kwargs_for_azure_connection_string(self):
         sdk = MagicMock()
@@ -65,9 +96,9 @@ class TestDatahubConnectorManager:
         assert call_kwargs["connection_string"] == "UseDevelopmentStorage=true"
         assert call_kwargs["container_name"] == "datahub-connectors"
         assert call_kwargs["print_message"] is False
-        assert call_kwargs["s3_access_key"] is None
-        assert call_kwargs["s3_secret_key"] is None
-        assert call_kwargs["session_token"] is None
+        assert "s3_access_key" not in call_kwargs
+        assert "s3_secret_key" not in call_kwargs
+        assert "session_token" not in call_kwargs
 
     def test_create_connector_uses_expected_sdk_kwargs_for_s3_assume_role(self):
         sdk = MagicMock()
@@ -97,9 +128,42 @@ class TestDatahubConnectorManager:
         assert call_kwargs["role_arn"] == "arn:aws:iam::111122223333:role/TestRole"
         assert call_kwargs["session_name"] == "test-session"
         assert call_kwargs["print_message"] is False
-        assert call_kwargs["connection_string"] is None
-        assert call_kwargs["account_key"] is None
-        assert call_kwargs["sas_token"] is None
+        assert "connection_string" not in call_kwargs
+        assert "account_key" not in call_kwargs
+        assert "sas_token" not in call_kwargs
+
+    def test_create_connector_uses_expected_sdk_kwargs_for_azure_service_principal(self):
+        sdk = MagicMock()
+        manager = MOD.DatahubConnectorManager(sdk)
+        request = MOD.ConnectorRequest(
+            name="conn-sp",
+            connector_type="AzureBlob",
+            auth_type="ServicePrincipal",
+            tenant_id="00000000-1111-2222-3333-444444444444",
+            client_id="aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            client_secret="super-secret-value",
+            service_uri="https://myaccount.blob.core.windows.net",
+            container_name="my-container",
+        )
+
+        sdk.datahub.create_connector = MagicMock(return_value=object())
+
+        with patch.object(MOD.SDKBase, "get_response_data", return_value=SimpleNamespace(success=True)):
+            success = manager.create_connector(request)
+
+        assert success is True
+        call_kwargs = sdk.datahub.create_connector.call_args.kwargs
+        assert call_kwargs["name"] == "conn-sp"
+        assert call_kwargs["connector_type"] == "AzureBlob"
+        assert call_kwargs["auth_type"] == "ServicePrincipal"
+        assert call_kwargs["tenant_id"] == "00000000-1111-2222-3333-444444444444"
+        assert call_kwargs["client_id"] == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        assert call_kwargs["client_secret"] == "super-secret-value"
+        assert call_kwargs["service_uri"] == "https://myaccount.blob.core.windows.net"
+        assert call_kwargs["container_name"] == "my-container"
+        assert call_kwargs["print_message"] is False
+        assert "connection_string" not in call_kwargs
+        assert "s3_access_key" not in call_kwargs
 
     def test_delete_connector_uses_expected_sdk_kwargs(self):
         sdk = MagicMock()
@@ -398,6 +462,140 @@ class TestMain:
 
         assert rc == 1
 
+    def test_main_builds_connector_request_for_service_principal(self):
+        argv = [
+            "datahub_connector_solparquet_uploader.py",
+            "--remote-path",
+            "Project/Study",
+            "--connector-name",
+            "conn-sp",
+            "--connector-type",
+            "AzureBlob",
+            "--auth-type",
+            "ServicePrincipal",
+            "--tenant-id",
+            "00000000-1111-2222-3333-444444444444",
+            "--client-id",
+            "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "--secret-name-client-secret",
+            "AZ_CLIENT_SECRET",
+            "--service-uri",
+            "https://myaccount.blob.core.windows.net",
+            "--container-name",
+            "my-container",
+        ]
+
+        env = {
+            "AZ_CLIENT_SECRET": "super-secret-value",
+        }
+        with patch.object(MOD, "DatahubSolParquetUploader") as mock_uploader_cls:
+            mock_uploader = mock_uploader_cls.return_value
+            mock_uploader.upload.return_value = True
+
+            with patch.dict(MOD.os.environ, env, clear=False):
+                with patch.object(sys, "argv", argv):
+                    rc = MOD.main()
+
+        assert rc == 0
+        call_kwargs = mock_uploader.upload.call_args.kwargs
+        assert call_kwargs["remote_base"] == "Project/Study"
+        request = call_kwargs["connector_request"]
+        assert request.name == "conn-sp"
+        assert request.connector_type == "AzureBlob"
+        assert request.auth_type == "ServicePrincipal"
+        assert request.tenant_id == "00000000-1111-2222-3333-444444444444"
+        assert request.client_id == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        assert request.client_secret == "super-secret-value"
+        assert request.service_uri == "https://myaccount.blob.core.windows.net"
+        assert request.container_name == "my-container"
+
+    def test_main_fails_when_tenant_id_missing(self):
+        argv = [
+            "datahub_connector_solparquet_uploader.py",
+            "--remote-path",
+            "Project/Study",
+            "--connector-name",
+            "conn-sp",
+            "--connector-type",
+            "AzureBlob",
+            "--auth-type",
+            "ServicePrincipal",
+            # --tenant-id intentionally omitted
+            "--client-id",
+            "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "--secret-name-client-secret",
+            "AZ_CLIENT_SECRET",
+            "--service-uri",
+            "https://myaccount.blob.core.windows.net",
+            "--container-name",
+            "my-container",
+        ]
+
+        env = {"AZ_CLIENT_SECRET": "super-secret-value"}
+        with patch.dict(MOD.os.environ, env, clear=False):
+            with patch.object(sys, "argv", argv):
+                rc = MOD.main()
+
+        assert rc == 1
+
+    def test_main_fails_when_client_id_missing(self):
+        argv = [
+            "datahub_connector_solparquet_uploader.py",
+            "--remote-path",
+            "Project/Study",
+            "--connector-name",
+            "conn-sp",
+            "--connector-type",
+            "AzureBlob",
+            "--auth-type",
+            "ServicePrincipal",
+            "--tenant-id",
+            "00000000-1111-2222-3333-444444444444",
+            # --client-id intentionally omitted
+            "--secret-name-client-secret",
+            "AZ_CLIENT_SECRET",
+            "--service-uri",
+            "https://myaccount.blob.core.windows.net",
+            "--container-name",
+            "my-container",
+        ]
+
+        env = {"AZ_CLIENT_SECRET": "super-secret-value"}
+        with patch.dict(MOD.os.environ, env, clear=False):
+            with patch.object(sys, "argv", argv):
+                rc = MOD.main()
+
+        assert rc == 1
+
+    def test_main_fails_when_client_secret_env_var_missing(self):
+        argv = [
+            "datahub_connector_solparquet_uploader.py",
+            "--remote-path",
+            "Project/Study",
+            "--connector-name",
+            "conn-sp",
+            "--connector-type",
+            "AzureBlob",
+            "--auth-type",
+            "ServicePrincipal",
+            "--tenant-id",
+            "00000000-1111-2222-3333-444444444444",
+            "--client-id",
+            "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "--secret-name-client-secret",
+            "AZ_CLIENT_SECRET_MISSING",
+            "--service-uri",
+            "https://myaccount.blob.core.windows.net",
+            "--container-name",
+            "my-container",
+        ]
+
+        with patch.dict(MOD.os.environ, {}, clear=False):
+            with patch.object(sys, "argv", argv):
+                rc = MOD.main()
+
+        assert rc == 1
+
     def test_main_fails_for_unsupported_connector_auth_combo(self):
         argv = [
             "datahub_connector_solparquet_uploader.py",
@@ -589,6 +787,84 @@ class TestConnectorAuthValidationMatrix:
             # --secret-name-s3-secret-key intentionally omitted
             "--region", "us-east-1",
             "--bucket-name", "my-bucket",
+        ]
+        with patch.object(sys, "argv", argv):
+            rc = MOD.main()
+        assert rc == 1
+
+    # --- AzureBlob / ServicePrincipal ---
+
+    def test_azureblob_serviceprincipal_passes_with_all_required_args(self):
+        argv = self._base_argv("AzureBlob", "ServicePrincipal") + [
+            "--tenant-id", "00000000-1111-2222-3333-444444444444",
+            "--client-id", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "--secret-name-client-secret", "AZ_CLIENT_SECRET",
+            "--service-uri", "https://myaccount.blob.core.windows.net",
+            "--container-name", "my-container",
+        ]
+        env = {"AZ_CLIENT_SECRET": "super-secret-value"}
+        with patch.object(MOD, "DatahubSolParquetUploader") as mock_cls:
+            mock_cls.return_value.upload.return_value = True
+            with patch.dict(MOD.os.environ, env, clear=False):
+                with patch.object(sys, "argv", argv):
+                    rc = MOD.main()
+        assert rc == 0
+
+    def test_azureblob_serviceprincipal_fails_when_tenant_id_missing(self):
+        argv = self._base_argv("AzureBlob", "ServicePrincipal") + [
+            # --tenant-id intentionally omitted
+            "--client-id", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "--secret-name-client-secret", "AZ_CLIENT_SECRET",
+            "--service-uri", "https://myaccount.blob.core.windows.net",
+            "--container-name", "my-container",
+        ]
+        with patch.object(sys, "argv", argv):
+            rc = MOD.main()
+        assert rc == 1
+
+    def test_azureblob_serviceprincipal_fails_when_client_id_missing(self):
+        argv = self._base_argv("AzureBlob", "ServicePrincipal") + [
+            "--tenant-id", "00000000-1111-2222-3333-444444444444",
+            # --client-id intentionally omitted
+            "--secret-name-client-secret", "AZ_CLIENT_SECRET",
+            "--service-uri", "https://myaccount.blob.core.windows.net",
+            "--container-name", "my-container",
+        ]
+        with patch.object(sys, "argv", argv):
+            rc = MOD.main()
+        assert rc == 1
+
+    def test_azureblob_serviceprincipal_fails_when_client_secret_secret_missing(self):
+        argv = self._base_argv("AzureBlob", "ServicePrincipal") + [
+            "--tenant-id", "00000000-1111-2222-3333-444444444444",
+            "--client-id", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            # --secret-name-client-secret intentionally omitted
+            "--service-uri", "https://myaccount.blob.core.windows.net",
+            "--container-name", "my-container",
+        ]
+        with patch.object(sys, "argv", argv):
+            rc = MOD.main()
+        assert rc == 1
+
+    def test_azureblob_serviceprincipal_fails_when_service_uri_missing(self):
+        argv = self._base_argv("AzureBlob", "ServicePrincipal") + [
+            "--tenant-id", "00000000-1111-2222-3333-444444444444",
+            "--client-id", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "--secret-name-client-secret", "AZ_CLIENT_SECRET",
+            # --service-uri intentionally omitted
+            "--container-name", "my-container",
+        ]
+        with patch.object(sys, "argv", argv):
+            rc = MOD.main()
+        assert rc == 1
+
+    def test_azureblob_serviceprincipal_fails_when_container_name_missing(self):
+        argv = self._base_argv("AzureBlob", "ServicePrincipal") + [
+            "--tenant-id", "00000000-1111-2222-3333-444444444444",
+            "--client-id", "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "--secret-name-client-secret", "AZ_CLIENT_SECRET",
+            "--service-uri", "https://myaccount.blob.core.windows.net",
+            # --container-name intentionally omitted
         ]
         with patch.object(sys, "argv", argv):
             rc = MOD.main()

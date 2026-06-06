@@ -1,4 +1,4 @@
-﻿# Time Series Comparison – README
+# Time Series Comparison - README
 
 ## Overview
 

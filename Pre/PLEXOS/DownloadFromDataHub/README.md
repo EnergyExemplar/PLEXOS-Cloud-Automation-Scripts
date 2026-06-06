@@ -1,4 +1,4 @@
-﻿# Download From DataHub – README
+# Download From DataHub - README
 
 ## Overview
 

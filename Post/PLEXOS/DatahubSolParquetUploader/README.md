@@ -1,4 +1,4 @@
-﻿# DatahubSolParquetUploader – README
+# DatahubSolParquetUploader - README
 
 ## Overview
 

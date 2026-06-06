@@ -240,355 +240,355 @@ stages:
                 Write-Host "✅ Successfully squash-merged and pushed to public GitHub master (commit $squashCommit)"
 
 # ── Runs on scheduled trigger or manual trigger ──
-- stage: Reverse_Sync_From_Public
-  displayName: Reverse Sync from Public GitHub
-  condition: |
-    and(
-      succeeded(),
-      in(variables['Build.Reason'], 'Schedule', 'Manual')
-    )
-  dependsOn: Set_BuildNumber
-  jobs:
-  - job: ReverseSyncFromPublic
-    displayName: Reverse Sync Commits from Public GitHub
-    pool:
-      vmImage: $(vmImageName)
-    steps:
-    - checkout: self
-      persistCredentials: false
-      fetchDepth: 0
+# - stage: Reverse_Sync_From_Public
+#   displayName: Reverse Sync from Public GitHub
+#   condition: |
+#     and(
+#       succeeded(),
+#       in(variables['Build.Reason'], 'Schedule', 'Manual')
+#     )
+#   dependsOn: Set_BuildNumber
+#   jobs:
+#   - job: ReverseSyncFromPublic
+#     displayName: Reverse Sync Commits from Public GitHub
+#     pool:
+#       vmImage: $(vmImageName)
+#     steps:
+#     - checkout: self
+#       persistCredentials: false
+#       fetchDepth: 0
 
-    - pwsh: |
-        if ($PSVersionTable.PSVersion.Major -lt 7) {
-          throw "PowerShell 7+ is required to import PEM private key. Current version: $($PSVersionTable.PSVersion)"
-        }
+#     - pwsh: |
+#         if ($PSVersionTable.PSVersion.Major -lt 7) {
+#           throw "PowerShell 7+ is required to import PEM private key. Current version: $($PSVersionTable.PSVersion)"
+#         }
 
-        function ConvertTo-Base64Url([byte[]]$bytes) {
-          $b64 = [Convert]::ToBase64String($bytes)
-          $b64 = $b64.TrimEnd('=')
-          $b64 = $b64.Replace('+', '-').Replace('/', '_')
-          return $b64
-        }
+#         function ConvertTo-Base64Url([byte[]]$bytes) {
+#           $b64 = [Convert]::ToBase64String($bytes)
+#           $b64 = $b64.TrimEnd('=')
+#           $b64 = $b64.Replace('+', '-').Replace('/', '_')
+#           return $b64
+#         }
 
-        # GitHub App for INTERNAL repo (energyexemplar-cloudplatform/PLEXOS-Cloud-Automation-Scripts-internal)
-        $privateKeyPem = ($env:GITHUB_INTERNAL_APP_PRIVATE_KEY ?? '').Trim()
-        if ([string]::IsNullOrWhiteSpace($privateKeyPem)) { throw 'GITHUB_INTERNAL_APP_PRIVATE_KEY is empty.' }
+#         # GitHub App for INTERNAL repo (energyexemplar-cloudplatform/PLEXOS-Cloud-Automation-Scripts-internal)
+#         $privateKeyPem = ($env:GITHUB_INTERNAL_APP_PRIVATE_KEY ?? '').Trim()
+#         if ([string]::IsNullOrWhiteSpace($privateKeyPem)) { throw 'GITHUB_INTERNAL_APP_PRIVATE_KEY is empty.' }
 
-        Write-Host "[DEBUG] Raw key length: $($privateKeyPem.Length)"
-        Write-Host "[DEBUG] Inspecting private key content for newline normalization (no key material logged)"
-        Write-Host "[DEBUG] Contains literal \n: $($privateKeyPem -match '\\n')"
-        Write-Host "[DEBUG] Contains actual newline: $($privateKeyPem -match "`n")"
+#         Write-Host "[DEBUG] Raw key length: $($privateKeyPem.Length)"
+#         Write-Host "[DEBUG] Inspecting private key content for newline normalization (no key material logged)"
+#         Write-Host "[DEBUG] Contains literal \n: $($privateKeyPem -match '\\n')"
+#         Write-Host "[DEBUG] Contains actual newline: $($privateKeyPem -match "`n")"
 
-        # Step 1: Replace literal \n escape sequences with real newlines
-        if ($privateKeyPem -match '\\n') {
-          Write-Host "[DEBUG] Replacing literal \\n with real newlines"
-          $privateKeyPem = $privateKeyPem -replace '\\n', "`n"
-        }
+#         # Step 1: Replace literal \n escape sequences with real newlines
+#         if ($privateKeyPem -match '\\n') {
+#           Write-Host "[DEBUG] Replacing literal \\n with real newlines"
+#           $privateKeyPem = $privateKeyPem -replace '\\n', "`n"
+#         }
 
-        # Step 2: If still no newlines, strip spaces and reconstruct proper PEM
-        if (-not ($privateKeyPem -match "`n")) {
-          Write-Host "[DEBUG] No newlines found — reconstructing PEM from single-line string"
-          # Remove all whitespace between header and footer, then reformat
-          if ($privateKeyPem -match '(-----BEGIN [^-]+ PRIVATE KEY-----)(.+?)(-----END [^-]+ PRIVATE KEY-----)') {
-            $header = $matches[1].Trim()
-            $body   = ($matches[2] -replace '\s', '')   # strip ALL whitespace from body
-            $footer = $matches[3].Trim()
-            Write-Host "[DEBUG] Extracted PEM header/footer and normalized body spacing (no key material logged)"
-            Write-Host "[DEBUG] Body length (stripped): $($body.Length)"
-            $lines = @()
-            for ($i = 0; $i -lt $body.Length; $i += 64) { $lines += $body.Substring($i, [Math]::Min(64, $body.Length - $i)) }
-            $privateKeyPem = "$header`n$($lines -join "`n")`n$footer"
-          } else {
-            Write-Host "##[warning]Could not parse PEM structure — key may be malformed"
-          }
-        }
+#         # Step 2: If still no newlines, strip spaces and reconstruct proper PEM
+#         if (-not ($privateKeyPem -match "`n")) {
+#           Write-Host "[DEBUG] No newlines found — reconstructing PEM from single-line string"
+#           # Remove all whitespace between header and footer, then reformat
+#           if ($privateKeyPem -match '(-----BEGIN [^-]+ PRIVATE KEY-----)(.+?)(-----END [^-]+ PRIVATE KEY-----)') {
+#             $header = $matches[1].Trim()
+#             $body   = ($matches[2] -replace '\s', '')   # strip ALL whitespace from body
+#             $footer = $matches[3].Trim()
+#             Write-Host "[DEBUG] Extracted PEM header/footer and normalized body spacing (no key material logged)"
+#             Write-Host "[DEBUG] Body length (stripped): $($body.Length)"
+#             $lines = @()
+#             for ($i = 0; $i -lt $body.Length; $i += 64) { $lines += $body.Substring($i, [Math]::Min(64, $body.Length - $i)) }
+#             $privateKeyPem = "$header`n$($lines -join "`n")`n$footer"
+#           } else {
+#             Write-Host "##[warning]Could not parse PEM structure — key may be malformed"
+#           }
+#         }
 
-        $appId = ($env:GITHUB_INTERNAL_APP_ID ?? '').Trim()
-        if ([string]::IsNullOrWhiteSpace($appId)) { throw 'GITHUB_INTERNAL_APP_ID is empty.' }
+#         $appId = ($env:GITHUB_INTERNAL_APP_ID ?? '').Trim()
+#         if ([string]::IsNullOrWhiteSpace($appId)) { throw 'GITHUB_INTERNAL_APP_ID is empty.' }
 
-        $installationId = ($env:GITHUB_INTERNAL_APP_INSTALLATION_ID ?? '').Trim()
-        if ([string]::IsNullOrWhiteSpace($installationId)) { throw 'GITHUB_INTERNAL_APP_INSTALLATION_ID is empty.' }
+#         $installationId = ($env:GITHUB_INTERNAL_APP_INSTALLATION_ID ?? '').Trim()
+#         if ([string]::IsNullOrWhiteSpace($installationId)) { throw 'GITHUB_INTERNAL_APP_INSTALLATION_ID is empty.' }
 
-        $now = [DateTimeOffset]::UtcNow
-        $iat = [int]$now.ToUnixTimeSeconds()
-        $exp = [int]$now.AddMinutes(10).ToUnixTimeSeconds()
+#         $now = [DateTimeOffset]::UtcNow
+#         $iat = [int]$now.ToUnixTimeSeconds()
+#         $exp = [int]$now.AddMinutes(10).ToUnixTimeSeconds()
 
-        $headerJson  = '{"alg":"RS256","typ":"JWT"}'
-        $payloadJson = "{`"iat`":$iat,`"exp`":$exp,`"iss`":`"$appId`"}"
+#         $headerJson  = '{"alg":"RS256","typ":"JWT"}'
+#         $payloadJson = "{`"iat`":$iat,`"exp`":$exp,`"iss`":`"$appId`"}"
 
-        $h = ConvertTo-Base64Url ([Text.Encoding]::UTF8.GetBytes($headerJson))
-        $p = ConvertTo-Base64Url ([Text.Encoding]::UTF8.GetBytes($payloadJson))
-        $unsigned = "$h.$p"
+#         $h = ConvertTo-Base64Url ([Text.Encoding]::UTF8.GetBytes($headerJson))
+#         $p = ConvertTo-Base64Url ([Text.Encoding]::UTF8.GetBytes($payloadJson))
+#         $unsigned = "$h.$p"
 
-        $rsa = [System.Security.Cryptography.RSA]::Create()
-        $rsa.ImportFromPem($privateKeyPem)
-        $sig = ConvertTo-Base64Url ($rsa.SignData(
-          [Text.Encoding]::UTF8.GetBytes($unsigned),
-          [System.Security.Cryptography.HashAlgorithmName]::SHA256,
-          [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
-        ))
-        $jwt = "$unsigned.$sig"
+#         $rsa = [System.Security.Cryptography.RSA]::Create()
+#         $rsa.ImportFromPem($privateKeyPem)
+#         $sig = ConvertTo-Base64Url ($rsa.SignData(
+#           [Text.Encoding]::UTF8.GetBytes($unsigned),
+#           [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+#           [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
+#         ))
+#         $jwt = "$unsigned.$sig"
 
-        $response = Invoke-RestMethod -Method Post `
-          -Uri "https://api.github.com/app/installations/$installationId/access_tokens" `
-          -Headers @{ Authorization = "Bearer $jwt"; Accept = 'application/vnd.github+json' }
+#         $response = Invoke-RestMethod -Method Post `
+#           -Uri "https://api.github.com/app/installations/$installationId/access_tokens" `
+#           -Headers @{ Authorization = "Bearer $jwt"; Accept = 'application/vnd.github+json' }
 
-        if (-not $response -or [string]::IsNullOrWhiteSpace($response.token)) {
-          throw 'GitHub installation token response did not include token.'
-        }
+#         if (-not $response -or [string]::IsNullOrWhiteSpace($response.token)) {
+#           throw 'GitHub installation token response did not include token.'
+#         }
 
-        Write-Host "##vso[task.setvariable variable=GITHUB_TOKEN;issecret=true]$($response.token)"
-        Write-Host 'Token generated successfully'
-      displayName: 'Generate GitHub App Token (Internal Repo)'
-      env:
-        GITHUB_INTERNAL_APP_PRIVATE_KEY: $(GITHUB_INTERNAL_APP_PRIVATE_KEY)
-        GITHUB_INTERNAL_APP_ID: $(GITHUB_INTERNAL_APP_ID)
-        GITHUB_INTERNAL_APP_INSTALLATION_ID: $(GITHUB_INTERNAL_APP_INSTALLATION_ID)
+#         Write-Host "##vso[task.setvariable variable=GITHUB_TOKEN;issecret=true]$($response.token)"
+#         Write-Host 'Token generated successfully'
+#       displayName: 'Generate GitHub App Token (Internal Repo)'
+#       env:
+#         GITHUB_INTERNAL_APP_PRIVATE_KEY: $(GITHUB_INTERNAL_APP_PRIVATE_KEY)
+#         GITHUB_INTERNAL_APP_ID: $(GITHUB_INTERNAL_APP_ID)
+#         GITHUB_INTERNAL_APP_INSTALLATION_ID: $(GITHUB_INTERNAL_APP_INSTALLATION_ID)
 
-    - pwsh: |
-        if ($PSVersionTable.PSVersion.Major -lt 7) {
-          throw "PowerShell 7+ is required. Current version: $($PSVersionTable.PSVersion)"
-        }
+#     - pwsh: |
+#         if ($PSVersionTable.PSVersion.Major -lt 7) {
+#           throw "PowerShell 7+ is required. Current version: $($PSVersionTable.PSVersion)"
+#         }
 
-        function ConvertTo-Base64Url([byte[]]$bytes) {
-          $b64 = [Convert]::ToBase64String($bytes)
-          $b64 = $b64.TrimEnd('=')
-          $b64 = $b64.Replace('+', '-').Replace('/', '_')
-          return $b64
-        }
+#         function ConvertTo-Base64Url([byte[]]$bytes) {
+#           $b64 = [Convert]::ToBase64String($bytes)
+#           $b64 = $b64.TrimEnd('=')
+#           $b64 = $b64.Replace('+', '-').Replace('/', '_')
+#           return $b64
+#         }
 
-        # GitHub App for PUBLIC repo (EnergyExemplar/PLEXOS-Cloud-Automation-Scripts)
-        $privateKeyPem = ($env:GITHUB_PUBLIC_APP_PRIVATE_KEY ?? '').Trim()
-        if ([string]::IsNullOrWhiteSpace($privateKeyPem)) { throw 'GITHUB_PUBLIC_APP_PRIVATE_KEY is empty.' }
+#         # GitHub App for PUBLIC repo (EnergyExemplar/PLEXOS-Cloud-Automation-Scripts)
+#         $privateKeyPem = ($env:GITHUB_PUBLIC_APP_PRIVATE_KEY ?? '').Trim()
+#         if ([string]::IsNullOrWhiteSpace($privateKeyPem)) { throw 'GITHUB_PUBLIC_APP_PRIVATE_KEY is empty.' }
 
-        if ($privateKeyPem -match '\\n') {
-          $privateKeyPem = $privateKeyPem -replace '\\n', "`n"
-        }
-        if (-not ($privateKeyPem -match "`n")) {
-          if ($privateKeyPem -match '(-----BEGIN [^-]+ PRIVATE KEY-----)(.+?)(-----END [^-]+ PRIVATE KEY-----)') {
-            $header = $matches[1].Trim()
-            $body   = ($matches[2] -replace '\s', '')
-            $footer = $matches[3].Trim()
-            $lines  = @()
-            for ($i = 0; $i -lt $body.Length; $i += 64) { $lines += $body.Substring($i, [Math]::Min(64, $body.Length - $i)) }
-            $privateKeyPem = "$header`n$($lines -join "`n")`n$footer"
-          }
-        }
+#         if ($privateKeyPem -match '\\n') {
+#           $privateKeyPem = $privateKeyPem -replace '\\n', "`n"
+#         }
+#         if (-not ($privateKeyPem -match "`n")) {
+#           if ($privateKeyPem -match '(-----BEGIN [^-]+ PRIVATE KEY-----)(.+?)(-----END [^-]+ PRIVATE KEY-----)') {
+#             $header = $matches[1].Trim()
+#             $body   = ($matches[2] -replace '\s', '')
+#             $footer = $matches[3].Trim()
+#             $lines  = @()
+#             for ($i = 0; $i -lt $body.Length; $i += 64) { $lines += $body.Substring($i, [Math]::Min(64, $body.Length - $i)) }
+#             $privateKeyPem = "$header`n$($lines -join "`n")`n$footer"
+#           }
+#         }
 
-        $appId          = ($env:GITHUB_PUBLIC_APP_ID ?? '').Trim()
-        $installationId = ($env:GITHUB_PUBLIC_APP_INSTALLATION_ID ?? '').Trim()
-        if ([string]::IsNullOrWhiteSpace($appId))          { throw 'GITHUB_PUBLIC_APP_ID is empty.' }
-        if ([string]::IsNullOrWhiteSpace($installationId)) { throw 'GITHUB_PUBLIC_APP_INSTALLATION_ID is empty.' }
+#         $appId          = ($env:GITHUB_PUBLIC_APP_ID ?? '').Trim()
+#         $installationId = ($env:GITHUB_PUBLIC_APP_INSTALLATION_ID ?? '').Trim()
+#         if ([string]::IsNullOrWhiteSpace($appId))          { throw 'GITHUB_PUBLIC_APP_ID is empty.' }
+#         if ([string]::IsNullOrWhiteSpace($installationId)) { throw 'GITHUB_PUBLIC_APP_INSTALLATION_ID is empty.' }
 
-        $now = [DateTimeOffset]::UtcNow
-        $iat = [int]$now.ToUnixTimeSeconds()
-        $exp = [int]$now.AddMinutes(10).ToUnixTimeSeconds()
+#         $now = [DateTimeOffset]::UtcNow
+#         $iat = [int]$now.ToUnixTimeSeconds()
+#         $exp = [int]$now.AddMinutes(10).ToUnixTimeSeconds()
 
-        $h = ConvertTo-Base64Url ([Text.Encoding]::UTF8.GetBytes('{"alg":"RS256","typ":"JWT"}'))
-        $p = ConvertTo-Base64Url ([Text.Encoding]::UTF8.GetBytes("{`"iat`":$iat,`"exp`":$exp,`"iss`":`"$appId`"}"))
-        $unsigned = "$h.$p"
+#         $h = ConvertTo-Base64Url ([Text.Encoding]::UTF8.GetBytes('{"alg":"RS256","typ":"JWT"}'))
+#         $p = ConvertTo-Base64Url ([Text.Encoding]::UTF8.GetBytes("{`"iat`":$iat,`"exp`":$exp,`"iss`":`"$appId`"}"))
+#         $unsigned = "$h.$p"
 
-        $rsa = [System.Security.Cryptography.RSA]::Create()
-        $rsa.ImportFromPem($privateKeyPem)
-        $sig = ConvertTo-Base64Url ($rsa.SignData(
-          [Text.Encoding]::UTF8.GetBytes($unsigned),
-          [System.Security.Cryptography.HashAlgorithmName]::SHA256,
-          [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
-        ))
-        $jwt = "$unsigned.$sig"
+#         $rsa = [System.Security.Cryptography.RSA]::Create()
+#         $rsa.ImportFromPem($privateKeyPem)
+#         $sig = ConvertTo-Base64Url ($rsa.SignData(
+#           [Text.Encoding]::UTF8.GetBytes($unsigned),
+#           [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+#           [System.Security.Cryptography.RSASignaturePadding]::Pkcs1
+#         ))
+#         $jwt = "$unsigned.$sig"
 
-        $response = Invoke-RestMethod -Method Post `
-          -Uri "https://api.github.com/app/installations/$installationId/access_tokens" `
-          -Headers @{ Authorization = "Bearer $jwt"; Accept = 'application/vnd.github+json' }
+#         $response = Invoke-RestMethod -Method Post `
+#           -Uri "https://api.github.com/app/installations/$installationId/access_tokens" `
+#           -Headers @{ Authorization = "Bearer $jwt"; Accept = 'application/vnd.github+json' }
 
-        if (-not $response -or [string]::IsNullOrWhiteSpace($response.token)) {
-          throw 'GitHub installation token response did not include token.'
-        }
+#         if (-not $response -or [string]::IsNullOrWhiteSpace($response.token)) {
+#           throw 'GitHub installation token response did not include token.'
+#         }
 
-        Write-Host "##vso[task.setvariable variable=GITHUB_PUBLIC_TOKEN;issecret=true]$($response.token)"
-        Write-Host 'Public repo token generated successfully'
-      displayName: 'Generate GitHub App Token (Public Repo)'
-      env:
-        GITHUB_PUBLIC_APP_PRIVATE_KEY: $(GITHUB_PUBLIC_APP_PRIVATE_KEY)
-        GITHUB_PUBLIC_APP_ID: $(GITHUB_PUBLIC_APP_ID)
-        GITHUB_PUBLIC_APP_INSTALLATION_ID: $(GITHUB_PUBLIC_APP_INSTALLATION_ID)
+#         Write-Host "##vso[task.setvariable variable=GITHUB_PUBLIC_TOKEN;issecret=true]$($response.token)"
+#         Write-Host 'Public repo token generated successfully'
+#       displayName: 'Generate GitHub App Token (Public Repo)'
+#       env:
+#         GITHUB_PUBLIC_APP_PRIVATE_KEY: $(GITHUB_PUBLIC_APP_PRIVATE_KEY)
+#         GITHUB_PUBLIC_APP_ID: $(GITHUB_PUBLIC_APP_ID)
+#         GITHUB_PUBLIC_APP_INSTALLATION_ID: $(GITHUB_PUBLIC_APP_INSTALLATION_ID)
 
-    - pwsh: |
-        git config --global user.email "ee-ravens-bot[bot]@users.noreply.github.com"
-        git config --global user.name "ee-ravens-bot[bot]"
-        # Scope extraheader to internal org only — public repo uses its own App token embedded in its remote URL
-        # persistCredentials: false ensures azure-pipelines[bot] token is NOT stored locally
-        $basicAuth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("x-access-token:$env:GITHUB_TOKEN"))
-        git config --global http."https://github.com/energyexemplar-cloudplatform/".extraheader "Authorization: Basic $basicAuth"
-        Write-Host "[OK] Git configured with ee-ravens-bot App token (scoped to internal org)"
-      displayName: 'Configure Git'
-      env:
-        GITHUB_TOKEN: $(GITHUB_TOKEN)
+#     - pwsh: |
+#         git config --global user.email "ee-ravens-bot[bot]@users.noreply.github.com"
+#         git config --global user.name "ee-ravens-bot[bot]"
+#         # Scope extraheader to internal org only — public repo uses its own App token embedded in its remote URL
+#         # persistCredentials: false ensures azure-pipelines[bot] token is NOT stored locally
+#         $basicAuth = [Convert]::ToBase64String([Text.Encoding]::ASCII.GetBytes("x-access-token:$env:GITHUB_TOKEN"))
+#         git config --global http."https://github.com/energyexemplar-cloudplatform/".extraheader "Authorization: Basic $basicAuth"
+#         Write-Host "[OK] Git configured with ee-ravens-bot App token (scoped to internal org)"
+#       displayName: 'Configure Git'
+#       env:
+#         GITHUB_TOKEN: $(GITHUB_TOKEN)
 
-    - task: PowerShell@2
-      displayName: 'Fetch and Sync from Public GitHub'
-      env:
-        GITHUB_TOKEN: $(GITHUB_TOKEN)
-        GITHUB_PUBLIC_TOKEN: $(GITHUB_PUBLIC_TOKEN)
-      inputs:
-        targetType: 'inline'
-        script: |
-          if ([string]::IsNullOrWhiteSpace($env:GITHUB_TOKEN)) {
-            Write-Host "##vso[task.logissue type=error]GITHUB_TOKEN is empty — ee-ravens-bot App token was not generated. Check Generate GitHub App Token step."
-            exit 1
-          }
-          Write-Host "[OK] ee-ravens-bot App token is present"
+#     - task: PowerShell@2
+#       displayName: 'Fetch and Sync from Public GitHub'
+#       env:
+#         GITHUB_TOKEN: $(GITHUB_TOKEN)
+#         GITHUB_PUBLIC_TOKEN: $(GITHUB_PUBLIC_TOKEN)
+#       inputs:
+#         targetType: 'inline'
+#         script: |
+#           if ([string]::IsNullOrWhiteSpace($env:GITHUB_TOKEN)) {
+#             Write-Host "##vso[task.logissue type=error]GITHUB_TOKEN is empty — ee-ravens-bot App token was not generated. Check Generate GitHub App Token step."
+#             exit 1
+#           }
+#           Write-Host "[OK] ee-ravens-bot App token is present"
 
-          $repoUrl = "https://x-access-token:$($env:GITHUB_PUBLIC_TOKEN)@github.com/EnergyExemplar/PLEXOS-Cloud-Automation-Scripts"
-          git remote add public $repoUrl
-          git fetch public master
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "##vso[task.logissue type=error]Failed to fetch from public GitHub. Check GITHUB_PUBLIC_TOKEN (public repo App token)."
-            exit 1
-          }
-          git fetch origin master
-          git fetch origin release
+#           $repoUrl = "https://x-access-token:$($env:GITHUB_PUBLIC_TOKEN)@github.com/EnergyExemplar/PLEXOS-Cloud-Automation-Scripts"
+#           git remote add public $repoUrl
+#           git fetch public master
+#           if ($LASTEXITCODE -ne 0) {
+#             Write-Host "##vso[task.logissue type=error]Failed to fetch from public GitHub. Check GITHUB_PUBLIC_TOKEN (public repo App token)."
+#             exit 1
+#           }
+#           git fetch origin master
+#           git fetch origin release
 
-          # ── Sync public/master → internal master (create PR) ──
-          # Strategy: apply ONLY files that changed in the public repo since the last sync.
-          # This preserves internal content — a file is only overwritten if it was explicitly
-          # modified in the public repo after the tracking ref baseline was established.
-          #
-          # How it works:
-          #   1. A tracking ref (refs/sync/last-public-master) in the internal repo records
-          #      the public commit SHA from the previous sync run.
-          #   2. `git diff --name-only <last> <current>` lists only files changed in public.
-          #   3. Only those files are applied via `git checkout public/master -- <file>`.
-          #   4. Files that exist only in internal, or that internal modified while public did not,
-          #      are never touched.
-          #   5. After the PR is pushed, the tracking ref is updated for the next run.
-          #
-          # FIRST RUN (no tracking ref):
-          #   The current public SHA is recorded as the baseline. No files are applied.
-          #   This prevents the bootstrap from overwriting internal files with older public
-          #   versions. From the next run onwards, only genuine public changes are synced.
+#           # ── Sync public/master → internal master (create PR) ──
+#           # Strategy: apply ONLY files that changed in the public repo since the last sync.
+#           # This preserves internal content — a file is only overwritten if it was explicitly
+#           # modified in the public repo after the tracking ref baseline was established.
+#           #
+#           # How it works:
+#           #   1. A tracking ref (refs/sync/last-public-master) in the internal repo records
+#           #      the public commit SHA from the previous sync run.
+#           #   2. `git diff --name-only <last> <current>` lists only files changed in public.
+#           #   3. Only those files are applied via `git checkout public/master -- <file>`.
+#           #   4. Files that exist only in internal, or that internal modified while public did not,
+#           #      are never touched.
+#           #   5. After the PR is pushed, the tracking ref is updated for the next run.
+#           #
+#           # FIRST RUN (no tracking ref):
+#           #   The current public SHA is recorded as the baseline. No files are applied.
+#           #   This prevents the bootstrap from overwriting internal files with older public
+#           #   versions. From the next run onwards, only genuine public changes are synced.
 
-          $currentPublicSha = (git rev-parse "public/master").Trim()
-          Write-Host "[OK] Current public/master SHA: $currentPublicSha"
+#           $currentPublicSha = (git rev-parse "public/master").Trim()
+#           Write-Host "[OK] Current public/master SHA: $currentPublicSha"
 
-          # Fetch last-synced public SHA from the internal tracking ref (may not exist yet)
-          $lastPublicSha = $null
-          git fetch origin "refs/sync/last-public-master:refs/sync/last-public-master" 2>$null
-          if ($LASTEXITCODE -eq 0) {
-            $lastPublicSha = (git rev-parse "refs/sync/last-public-master" 2>$null).Trim()
-            Write-Host "[OK] Last synced public SHA: $lastPublicSha"
-          } else {
-            Write-Host "[WARN] No tracking ref found — this is the first sync run."
-          }
+#           # Fetch last-synced public SHA from the internal tracking ref (may not exist yet)
+#           $lastPublicSha = $null
+#           git fetch origin "refs/sync/last-public-master:refs/sync/last-public-master" 2>$null
+#           if ($LASTEXITCODE -eq 0) {
+#             $lastPublicSha = (git rev-parse "refs/sync/last-public-master" 2>$null).Trim()
+#             Write-Host "[OK] Last synced public SHA: $lastPublicSha"
+#           } else {
+#             Write-Host "[WARN] No tracking ref found — this is the first sync run."
+#           }
 
-          if (-not $lastPublicSha) {
-            # First run: establish the baseline at current public HEAD — do NOT apply any files.
-            # Applying all public files risks overwriting internal versions that are newer or
-            # diverged. Future runs will only apply files changed in public after this point.
-            git push origin "${currentPublicSha}:refs/sync/last-public-master"
-            if ($LASTEXITCODE -ne 0) {
-              Write-Host "##[warning]Failed to store initial tracking ref. Next sync will retry baseline establishment."
-            } else {
-              Write-Host "[OK] First sync — baseline established at $currentPublicSha. No files applied. Future syncs will only pick up changes made directly in public after this point."
-            }
-          } elseif ($lastPublicSha -eq $currentPublicSha) {
-            Write-Host "ℹ️  public/master has not moved since last sync — nothing to apply."
-          } else {
-            # Subsequent run: compute files changed in public since the last sync
-            $filesToApply = @(git diff --name-only $lastPublicSha $currentPublicSha)
-            Write-Host "[OK] $($filesToApply.Count) file(s) changed in public/master since last sync"
+#           if (-not $lastPublicSha) {
+#             # First run: establish the baseline at current public HEAD — do NOT apply any files.
+#             # Applying all public files risks overwriting internal versions that are newer or
+#             # diverged. Future runs will only apply files changed in public after this point.
+#             git push origin "${currentPublicSha}:refs/sync/last-public-master"
+#             if ($LASTEXITCODE -ne 0) {
+#               Write-Host "##[warning]Failed to store initial tracking ref. Next sync will retry baseline establishment."
+#             } else {
+#               Write-Host "[OK] First sync — baseline established at $currentPublicSha. No files applied. Future syncs will only pick up changes made directly in public after this point."
+#             }
+#           } elseif ($lastPublicSha -eq $currentPublicSha) {
+#             Write-Host "ℹ️  public/master has not moved since last sync — nothing to apply."
+#           } else {
+#             # Subsequent run: compute files changed in public since the last sync
+#             $filesToApply = @(git diff --name-only $lastPublicSha $currentPublicSha)
+#             Write-Host "[OK] $($filesToApply.Count) file(s) changed in public/master since last sync"
 
-            if ($filesToApply.Count -gt 0) {
-              $dateSuffix = (Get-Date -Format 'yyyyMMdd-HHmmss')
-              $syncBranch = "sync/public-master-$dateSuffix"
+#             if ($filesToApply.Count -gt 0) {
+#               $dateSuffix = (Get-Date -Format 'yyyyMMdd-HHmmss')
+#               $syncBranch = "sync/public-master-$dateSuffix"
 
-              git checkout -b $syncBranch origin/master
-              if ($LASTEXITCODE -ne 0) {
-                Write-Host "##vso[task.logissue type=error]Failed to create sync branch from internal/master."
-                exit 1
-              }
+#               git checkout -b $syncBranch origin/master
+#               if ($LASTEXITCODE -ne 0) {
+#                 Write-Host "##vso[task.logissue type=error]Failed to create sync branch from internal/master."
+#                 exit 1
+#               }
 
-              # Apply only files that changed in public — internal-only files and files that
-              # internal modified while public did not are never touched.
-              foreach ($f in $filesToApply) {
-                git cat-file -e "public/master:$f" 2>$null
-                if ($LASTEXITCODE -eq 0) {
-                  git checkout public/master -- $f
-                } else {
-                  Write-Host "[WARN] $f was deleted in public/master — leaving internal version untouched"
-                }
-              }
+#               # Apply only files that changed in public — internal-only files and files that
+#               # internal modified while public did not are never touched.
+#               foreach ($f in $filesToApply) {
+#                 git cat-file -e "public/master:$f" 2>$null
+#                 if ($LASTEXITCODE -eq 0) {
+#                   git checkout public/master -- $f
+#                 } else {
+#                   Write-Host "[WARN] $f was deleted in public/master — leaving internal version untouched"
+#                 }
+#               }
 
-              # Only create a PR if applying public changes actually differs from internal/master
-              git diff --cached --quiet
-              if ($LASTEXITCODE -eq 0) {
-                Write-Host "ℹ️  Public changes are already present in internal/master — no PR needed."
-                git checkout -
-                git branch -D $syncBranch
-              } else {
-                git commit -m "Reverse sync: public/master to internal master ($dateSuffix)"
-                if ($LASTEXITCODE -ne 0) {
-                  Write-Host "##vso[task.logissue type=error]Failed to commit sync changes."
-                  exit 1
-                }
+#               # Only create a PR if applying public changes actually differs from internal/master
+#               git diff --cached --quiet
+#               if ($LASTEXITCODE -eq 0) {
+#                 Write-Host "ℹ️  Public changes are already present in internal/master — no PR needed."
+#                 git checkout -
+#                 git branch -D $syncBranch
+#               } else {
+#                 git commit -m "Reverse sync: public/master to internal master ($dateSuffix)"
+#                 if ($LASTEXITCODE -ne 0) {
+#                   Write-Host "##vso[task.logissue type=error]Failed to commit sync changes."
+#                   exit 1
+#                 }
 
-                git push origin $syncBranch
-                if ($LASTEXITCODE -ne 0) {
-                  Write-Host "##vso[task.logissue type=error]Failed to push sync branch to internal repo."
-                  exit 1
-                }
-                Write-Host "[OK] Pushed sync branch: $syncBranch"
+#                 git push origin $syncBranch
+#                 if ($LASTEXITCODE -ne 0) {
+#                   Write-Host "##vso[task.logissue type=error]Failed to push sync branch to internal repo."
+#                   exit 1
+#                 }
+#                 Write-Host "[OK] Pushed sync branch: $syncBranch"
 
-                $prBody = @{
-                  title = "Reverse sync: public/master to internal master ($dateSuffix)"
-                  head  = $syncBranch
-                  base  = "master"
-                  body  = "Automated reverse sync from EnergyExemplar/PLEXOS-Cloud-Automation-Scripts public master."
-                } | ConvertTo-Json
+#                 $prBody = @{
+#                   title = "Reverse sync: public/master to internal master ($dateSuffix)"
+#                   head  = $syncBranch
+#                   base  = "master"
+#                   body  = "Automated reverse sync from EnergyExemplar/PLEXOS-Cloud-Automation-Scripts public master."
+#                 } | ConvertTo-Json
 
-                $prResponse = Invoke-RestMethod -Method Post `
-                  -Uri "https://api.github.com/repos/energyexemplar-cloudplatform/PLEXOS-Cloud-Automation-Scripts-internal/pulls" `
-                  -Headers @{ Authorization = "token $env:GITHUB_TOKEN"; Accept = 'application/vnd.github+json' } `
-                  -Body $prBody `
-                  -ContentType 'application/json'
+#                 $prResponse = Invoke-RestMethod -Method Post `
+#                   -Uri "https://api.github.com/repos/energyexemplar-cloudplatform/PLEXOS-Cloud-Automation-Scripts-internal/pulls" `
+#                   -Headers @{ Authorization = "token $env:GITHUB_TOKEN"; Accept = 'application/vnd.github+json' } `
+#                   -Body $prBody `
+#                   -ContentType 'application/json'
 
-                if ($prResponse -and $prResponse.html_url) {
-                  Write-Host "✅ PR created: $($prResponse.html_url)"
-                } else {
-                  Write-Host "##vso[task.logissue type=error]PR creation failed or returned no URL."
-                  exit 1
-                }
-              }
+#                 if ($prResponse -and $prResponse.html_url) {
+#                   Write-Host "✅ PR created: $($prResponse.html_url)"
+#                 } else {
+#                   Write-Host "##vso[task.logissue type=error]PR creation failed or returned no URL."
+#                   exit 1
+#                 }
+#               }
 
-              # Update the tracking ref for the next run
-              git push origin "${currentPublicSha}:refs/sync/last-public-master"
-              if ($LASTEXITCODE -ne 0) {
-                Write-Host "##[warning]Failed to update tracking ref — next sync will re-diff from $lastPublicSha."
-              } else {
-                Write-Host "[OK] Updated tracking ref to $currentPublicSha"
-              }
-            }
-          }
+#               # Update the tracking ref for the next run
+#               git push origin "${currentPublicSha}:refs/sync/last-public-master"
+#               if ($LASTEXITCODE -ne 0) {
+#                 Write-Host "##[warning]Failed to update tracking ref — next sync will re-diff from $lastPublicSha."
+#               } else {
+#                 Write-Host "[OK] Updated tracking ref to $currentPublicSha"
+#               }
+#             }
+#           }
 
-          # ── Sync public/master → internal release (squash, independent of master) ──
-          $publicMasterTree    = git rev-parse "public/master^{tree}"
-          $internalReleaseTree = git rev-parse "origin/release^{tree}"
-          if ($publicMasterTree -ne $internalReleaseTree) {
-            Write-Host "Content differs between public/master and internal release — squash-syncing"
+#           # ── Sync public/master → internal release (squash, independent of master) ──
+#           $publicMasterTree    = git rev-parse "public/master^{tree}"
+#           $internalReleaseTree = git rev-parse "origin/release^{tree}"
+#           if ($publicMasterTree -ne $internalReleaseTree) {
+#             Write-Host "Content differs between public/master and internal release — squash-syncing"
 
-            # Build a squash commit: full tree of public/master parented onto origin/release
-            $squashCommit = git commit-tree $publicMasterTree -p origin/release -m "merged from public repo"
-            if ($LASTEXITCODE -ne 0) {
-              Write-Host "##vso[task.logissue type=error]Failed to create squash commit for release."
-              exit 1
-            }
+#             # Build a squash commit: full tree of public/master parented onto origin/release
+#             $squashCommit = git commit-tree $publicMasterTree -p origin/release -m "merged from public repo"
+#             if ($LASTEXITCODE -ne 0) {
+#               Write-Host "##vso[task.logissue type=error]Failed to create squash commit for release."
+#               exit 1
+#             }
 
-            git push origin "${squashCommit}:refs/heads/release"
-            if ($LASTEXITCODE -ne 0) {
-              Write-Host "##vso[task.logissue type=error]Failed to push squash commit to internal release."
-              exit 1
-            }
-            Write-Host "✅ Squash-synced public/master into internal release (commit $squashCommit)"
-          } else {
-            Write-Host "ℹ️  No new commits to sync — internal release is already up to date with public/master"
-          }
+#             git push origin "${squashCommit}:refs/heads/release"
+#             if ($LASTEXITCODE -ne 0) {
+#               Write-Host "##vso[task.logissue type=error]Failed to push squash commit to internal release."
+#               exit 1
+#             }
+#             Write-Host "✅ Squash-synced public/master into internal release (commit $squashCommit)"
+#           } else {
+#             Write-Host "ℹ️  No new commits to sync — internal release is already up to date with public/master"
+#           }

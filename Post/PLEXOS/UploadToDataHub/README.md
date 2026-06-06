@@ -1,4 +1,4 @@
-﻿# Upload to DataHub – README
+# Upload to DataHub - README
 
 ## Overview
 
