@@ -717,197 +717,319 @@ class SensitivityCreator:
 
         # Step 2: SDK context for all object and property operations.
         print("\n[OK] Step  OPENING SDK CONTEXT AND TRANSACTION")
-        with PLEXOSSDK(self.db_path) as sdk:
-            print("[OK] SDK context initialized")
 
-            print("\n[OK] Step  RESOLVING TARGET COLLECTION AND PROPERTY")
-            parent_class_lang_id, collection_lang_id, property_lang_id = self._resolve_ids(
-                collection_name, property_name
-            )
-            print("[OK] Target collection and property IDs resolved")
-
-            with sdk.transaction():
-                print("\n[OK] Step  CREATING/RETRIEVING SCENARIO")
-                # Always: create/get scenario.
-                scenario_obj = get_or_create_scenario_object(
-                    sdk, scenario_class_lang_id, scenario_name
-                )
-                print(f"[OK] Scenario '{scenario_name}' ready (object_id={scenario_obj.object_id})")
-
-                print("\n[OK] Step  ENSURING MODEL.SCENARIOS MEMBERSHIP")
-                scenario_membership_created = ensure_membership(
-                    sdk,
-                    parent_class_lang_id=model_class_lang_id,
-                    collection_lang_id=model_scenario_collection_lang_id,
-                    parent_name=model_object_name,
-                    child_name=scenario_name,
-                )
-                if scenario_membership_created:
-                    print(
-                        f"[OK] Scenario membership created: "
-                        f"{model_object_name}/{scenario_name} (Model.Scenarios)"
-                    )
-                else:
-                    print(
-                        f"[OK] Scenario membership exists: "
-                        f"{model_object_name}/{scenario_name} (Model.Scenarios)"
-                    )
-
-                # Always: get main membership and property object.
-                print("\n[OK] Step  RETRIEVING TARGET MEMBERSHIP")
-                try:
-                    main_membership = sdk.get_membership_by_names(
-                        parent_class_lang_id=parent_class_lang_id,
-                        collection_lang_id=collection_lang_id,
-                        parent_name=parent_object_name,
-                        child_name=child_object_name,
-                    )
-                    print(
-                        f"[OK] Membership retrieved: {parent_object_name}/{child_object_name} "
-                        f"(membership_id={main_membership.membership_id})"
-                    )
-                except Exception as exc:
-                    raise ValueError(
-                        f"Membership not found for '{parent_object_name}'/'{child_object_name}' "
-                        f"in collection '{collection_name}': {exc}"
-                    ) from exc
-
-                print("\n[OK] Step  RETRIEVING TARGET PROPERTY")
-                try:
-                    main_property_obj = sdk.get_property(
-                        parent_class_lang_id=parent_class_lang_id,
-                        collection_lang_id=collection_lang_id,
-                        property_lang_id=property_lang_id,
-                    )
-                    print(
-                        f"[OK] Property retrieved: '{property_name}' "
-                        f"(property_id={main_property_obj.property_id})"
-                    )
-                except Exception as exc:
-                    raise ValueError(
-                        f"Failed to retrieve property '{property_name}': {exc}"
-                    ) from exc
-
-                if data_file_name is None:
-                    # Branch A: numeric mode - compute profile value from current base value.
-                    print("\n[OK] Step  NUMERIC MODE: READING BASE PROPERTY VALUE")
-                    try:
-                        base_value = sdk.get_property_value(
-                            membership=main_membership,
-                            property_obj=main_property_obj,
-                            band_id=band_id,
+        # Temporarily rename the System object to "System" so the SDK
+        # can find it during init.  Restored in the finally block below.
+        _sys_renamed = False
+        _original_system_object_name = system_object_name
+        if system_object_name != "System":
+            # Self-healing: if a previous run was killed between rename and
+            # restore, the object may already be named "System".  Detect
+            # this and skip the rename (the finally block will restore it).
+            try:
+                with sqlite3.connect(self.db_path) as _con:
+                    _leftover = _con.execute(
+                        """
+                        SELECT 1 FROM t_object
+                        WHERE name = 'System' AND class_id IN (
+                            SELECT class_id FROM t_class WHERE lang_id = ?
                         )
-                    except Exception as exc:
-                        raise ValueError(f"Failed to read base property value: {exc}") from exc
-
-                    if base_value is None:
-                        raise ValueError(
-                            "Base property value not found for the target membership/property/band combination."
+                        LIMIT 1
+                        """,
+                        (system_class_lang_id,),
+                    ).fetchone()
+                    if _leftover:
+                        # Already named "System" — likely leftover from a
+                        # killed run.  Treat as renamed so finally restores it.
+                        _sys_renamed = True
+                        system_object_name = "System"
+                        if parent_object_name.lower() == _original_system_object_name.lower():
+                            parent_object_name = "System"
+                        print(
+                            f"[WARN] System object already named 'System' "
+                            f"(expected '{_original_system_object_name}') — "
+                            f"recovering from previous interrupted run"
                         )
-                    profile_value = round(float(base_value) * (1.0 + sensitivity), 8)
-                    print(f"[OK] Base value read: {base_value} (band_id={band_id})")
-                    print(f"[OK] Profile value: {base_value} × (1 + {sensitivity * 100:g}%) = {profile_value}")
-
-                print("\n[OK] Step  PREPARING VARIABLE PROFILE CONTEXT")
-                var_obj = self._get_or_create_variable(
-                    sdk,
-                    variable_class_lang_id=variable_class_lang_id,
-                    variable_name=variable_name,
+                    else:
+                        _cur = _con.execute(
+                            """
+                            UPDATE t_object SET name = 'System'
+                            WHERE name = ? AND class_id IN (
+                                SELECT class_id FROM t_class WHERE lang_id = ?
+                            )
+                            """,
+                            (system_object_name, system_class_lang_id),
+                        )
+                        if _cur.rowcount:
+                            _con.commit()
+                            _sys_renamed = True
+                            # Update all name variables so SDK lookups use "System"
+                            system_object_name = "System"
+                            if parent_object_name.lower() == _original_system_object_name.lower():
+                                parent_object_name = "System"
+                            print(
+                                f"[OK] Temporarily renamed System object "
+                                f"'{_original_system_object_name}' -> 'System' for SDK context"
+                            )
+            except Exception as _rename_exc:
+                print(f"[WARN] Could not rename System object: {_rename_exc}")
+        elif parent_object_name.lower() != "system":
+            # Recovery: system_object_name resolved to "System" from the DB,
+            # but the user supplied a different parent name.  If no object
+            # with that name exists, this is likely a leftover rename from a
+            # killed previous run — rewrite parent_object_name so the
+            # membership lookup succeeds and restore the original name after.
+            try:
+                with sqlite3.connect(self.db_path) as _con:
+                    _parent_exists = _con.execute(
+                        "SELECT 1 FROM t_object WHERE name = ? LIMIT 1",
+                        (parent_object_name,),
+                    ).fetchone()
+                    if not _parent_exists:
+                        _original_system_object_name = parent_object_name
+                        parent_object_name = "System"
+                        _sys_renamed = True
+                        print(
+                            f"[WARN] No object '{_original_system_object_name}' "
+                            f"found and System object is 'System' — recovering "
+                            f"from previous interrupted run"
+                        )
+            except Exception as _recovery_exc:
+                print(
+                    f"[WARN] Could not check for leftover System rename: "
+                    f"{_recovery_exc}"
                 )
 
-                var_membership = self._get_or_create_system_variable_membership(
-                    sdk,
-                    system_class_lang_id=system_class_lang_id,
-                    system_var_coll_lang_id=system_var_coll_lang_id,
-                    variable_name=variable_name,
-                    var_obj=var_obj,
-                    system_object_name=system_object_name,
-                )
-
-                profile_property_obj = self._get_variable_profile_property(
-                    sdk,
-                    system_class_lang_id=system_class_lang_id,
-                    system_var_coll_lang_id=system_var_coll_lang_id,
-                    profile_prop_lang_id=profile_prop_lang_id,
-                )
-
-                self._set_variable_profile(
-                    sdk,
-                    var_membership=var_membership,
-                    profile_property_obj=profile_property_obj,
-                    profile_value=float(profile_value),
-                    scenario_obj=scenario_obj,
-                    variable_name=variable_name,
-                    scenario_name=scenario_name,
-                )
-
-                if data_file_name is None:
-                    print("\n[OK] Step  NUMERIC MODE: TAGGING TARGET PROPERTY WITH EXPRESSION")
-                    print(f"[OK] Tagging property '{property_name}' with:")
-                    print(f"  - expression: '{variable_name}'")
-                    print(f"  - scenario: '{scenario_name}'")
-                    print("  - action: = (assign, id=0)")
-                    print(f"  - band_id: {band_id}")
+        try:
+            with PLEXOSSDK(self.db_path) as sdk:
+                # Fallback: if the SDK still has no system_object (rename didn't
+                # help or name was already "System"), try direct assignment.
+                if sdk.system_object is None:
                     try:
-                        sdk.add_property(
-                            membership=main_membership,
-                            property_obj=main_property_obj,
-                            expression_tag=var_obj,
-                            scenario_tag=scenario_obj,
-                            band_id=band_id,
+                        _patched_sys_obj = sdk.get_object_by_name(
+                            class_lang_id=system_class_lang_id,
+                            object_name=system_object_name,
+                        )
+                        sdk.system_object = _patched_sys_obj
+                        print(f"[OK] SDK system_object patched via get_object_by_name: '{system_object_name}'")
+                    except Exception as _patch_exc:
+                        print(f"[WARN] Could not patch SDK system_object: {_patch_exc}")
+                print("[OK] SDK context initialized")
+
+                print("\n[OK] Step  RESOLVING TARGET COLLECTION AND PROPERTY")
+                parent_class_lang_id, collection_lang_id, property_lang_id = self._resolve_ids(
+                    collection_name, property_name
+                )
+                print("[OK] Target collection and property IDs resolved")
+
+                with sdk.transaction():
+                    print("\n[OK] Step  CREATING/RETRIEVING SCENARIO")
+                    # Always: create/get scenario.
+                    scenario_obj = get_or_create_scenario_object(
+                        sdk, scenario_class_lang_id, scenario_name
+                    )
+                    print(f"[OK] Scenario '{scenario_name}' ready (object_id={scenario_obj.object_id})")
+
+                    print("\n[OK] Step  ENSURING MODEL.SCENARIOS MEMBERSHIP")
+                    scenario_membership_created = ensure_membership(
+                        sdk,
+                        parent_class_lang_id=model_class_lang_id,
+                        collection_lang_id=model_scenario_collection_lang_id,
+                        parent_name=model_object_name,
+                        child_name=scenario_name,
+                    )
+                    if scenario_membership_created:
+                        print(
+                            f"[OK] Scenario membership created: "
+                            f"{model_object_name}/{scenario_name} (Model.Scenarios)"
+                        )
+                    else:
+                        print(
+                            f"[OK] Scenario membership exists: "
+                            f"{model_object_name}/{scenario_name} (Model.Scenarios)"
+                        )
+
+                    # Always: get main membership and property object.
+                    print("\n[OK] Step  RETRIEVING TARGET MEMBERSHIP")
+                    try:
+                        main_membership = sdk.get_membership_by_names(
+                            parent_class_lang_id=parent_class_lang_id,
+                            collection_lang_id=collection_lang_id,
+                            parent_name=parent_object_name,
+                            child_name=child_object_name,
                         )
                         print(
-                            f"[OK] Property '{property_name}' tagged with expression='{variable_name}' "
-                            f"for scenario='{scenario_name}'"
+                            f"[OK] Membership retrieved: {parent_object_name}/{child_object_name} "
+                            f"(membership_id={main_membership.membership_id})"
                         )
-                    except Exception as exc:
-                        if "already exists" in str(exc).lower():
-                            print(f"[WARN] Property '{property_name}' expression tag already exists - skipping")
-                        else:
-                            raise
-                else:
-                    print("\n[OK] Step  EXPRESSION MODE: LOOKING UP DATA FILE")
-                    try:
-                        data_file_obj = sdk.get_object_by_name(
-                            class_lang_id=data_file_class_lang_id,
-                            object_name=data_file_name,
-                        )
-                        print(f"[OK] Data File '{data_file_name}' found (object_id={data_file_obj.object_id})")
                     except Exception as exc:
                         raise ValueError(
-                            f"Data File object '{data_file_name}' not found in model. "
-                            f"Ensure the Data File exists before running this script: {exc}"
+                            f"Membership not found for '{parent_object_name}'/'{child_object_name}' "
+                            f"in collection '{collection_name}': {exc}"
                         ) from exc
 
-                    print("\n[OK] Step  EXPRESSION MODE: TAGGING TARGET PROPERTY WITH EXPRESSION")
-                    print(f"[OK] Tagging property '{property_name}' with:")
-                    print(f"  - expression: '{variable_name}'")
-                    print(f"  - scenario:   '{scenario_name}'")
-                    print(f"  - data_file:  '{data_file_name}'")
-                    print("  - action:     × (multiply, id=1)")
-                    print(f"  - band_id:    {band_id}")
+                    print("\n[OK] Step  RETRIEVING TARGET PROPERTY")
                     try:
-                        sdk.add_property(
-                            membership=main_membership,
-                            property_obj=main_property_obj,
-                            expression_tag=var_obj,
-                            scenario_tag=scenario_obj,
-                            data_file_tag=data_file_obj,
-                            band_id=band_id,
+                        main_property_obj = sdk.get_property(
+                            parent_class_lang_id=parent_class_lang_id,
+                            collection_lang_id=collection_lang_id,
+                            property_lang_id=property_lang_id,
                         )
                         print(
-                            f"[OK] Property '{property_name}' tagged with expression='{variable_name}' "
-                            f"(scenario='{scenario_name}', data_file='{data_file_name}')"
+                            f"[OK] Property retrieved: '{property_name}' "
+                            f"(property_id={main_property_obj.property_id})"
                         )
                     except Exception as exc:
-                        if "already exists" in str(exc).lower():
-                            print(f"[WARN] Property '{property_name}' expression tag already exists - skipping")
-                        else:
-                            raise
+                        raise ValueError(
+                            f"Failed to retrieve property '{property_name}': {exc}"
+                        ) from exc
 
-                membership_id_for_action = getattr(main_membership, "membership_id", None)
-                property_id_for_action = getattr(main_property_obj, "property_id", None)
-                expression_object_id_for_action = getattr(var_obj, "object_id", None)
+                    if data_file_name is None:
+                        # Branch A: numeric mode - compute profile value from current base value.
+                        print("\n[OK] Step  NUMERIC MODE: READING BASE PROPERTY VALUE")
+                        try:
+                            base_value = sdk.get_property_value(
+                                membership=main_membership,
+                                property_obj=main_property_obj,
+                                band_id=band_id,
+                            )
+                        except Exception as exc:
+                            raise ValueError(f"Failed to read base property value: {exc}") from exc
+
+                        if base_value is None:
+                            raise ValueError(
+                                "Base property value not found for the target membership/property/band combination."
+                            )
+                        profile_value = round(float(base_value) * (1.0 + sensitivity), 8)
+                        print(f"[OK] Base value read: {base_value} (band_id={band_id})")
+                        print(f"[OK] Profile value: {base_value} × (1 + {sensitivity * 100:g}%) = {profile_value}")
+
+                    print("\n[OK] Step  PREPARING VARIABLE PROFILE CONTEXT")
+                    var_obj = self._get_or_create_variable(
+                        sdk,
+                        variable_class_lang_id=variable_class_lang_id,
+                        variable_name=variable_name,
+                    )
+
+                    var_membership = self._get_or_create_system_variable_membership(
+                        sdk,
+                        system_class_lang_id=system_class_lang_id,
+                        system_var_coll_lang_id=system_var_coll_lang_id,
+                        variable_name=variable_name,
+                        var_obj=var_obj,
+                        system_object_name=system_object_name,
+                    )
+
+                    profile_property_obj = self._get_variable_profile_property(
+                        sdk,
+                        system_class_lang_id=system_class_lang_id,
+                        system_var_coll_lang_id=system_var_coll_lang_id,
+                        profile_prop_lang_id=profile_prop_lang_id,
+                    )
+
+                    self._set_variable_profile(
+                        sdk,
+                        var_membership=var_membership,
+                        profile_property_obj=profile_property_obj,
+                        profile_value=float(profile_value),
+                        scenario_obj=scenario_obj,
+                        variable_name=variable_name,
+                        scenario_name=scenario_name,
+                    )
+
+                    if data_file_name is None:
+                        print("\n[OK] Step  NUMERIC MODE: TAGGING TARGET PROPERTY WITH EXPRESSION")
+                        print(f"[OK] Tagging property '{property_name}' with:")
+                        print(f"  - expression: '{variable_name}'")
+                        print(f"  - scenario: '{scenario_name}'")
+                        print("  - action: = (assign, id=0)")
+                        print(f"  - band_id: {band_id}")
+                        try:
+                            sdk.add_property(
+                                membership=main_membership,
+                                property_obj=main_property_obj,
+                                expression_tag=var_obj,
+                                scenario_tag=scenario_obj,
+                                band_id=band_id,
+                            )
+                            print(
+                                f"[OK] Property '{property_name}' tagged with expression='{variable_name}' "
+                                f"for scenario='{scenario_name}'"
+                            )
+                        except Exception as exc:
+                            if "already exists" in str(exc).lower():
+                                print(f"[WARN] Property '{property_name}' expression tag already exists - skipping")
+                            else:
+                                raise
+                    else:
+                        print("\n[OK] Step  EXPRESSION MODE: LOOKING UP DATA FILE")
+                        try:
+                            data_file_obj = sdk.get_object_by_name(
+                                class_lang_id=data_file_class_lang_id,
+                                object_name=data_file_name,
+                            )
+                            print(f"[OK] Data File '{data_file_name}' found (object_id={data_file_obj.object_id})")
+                        except Exception as exc:
+                            raise ValueError(
+                                f"Data File object '{data_file_name}' not found in model. "
+                                f"Ensure the Data File exists before running this script: {exc}"
+                            ) from exc
+
+                        print("\n[OK] Step  EXPRESSION MODE: TAGGING TARGET PROPERTY WITH EXPRESSION")
+                        print(f"[OK] Tagging property '{property_name}' with:")
+                        print(f"  - expression: '{variable_name}'")
+                        print(f"  - scenario:   '{scenario_name}'")
+                        print(f"  - data_file:  '{data_file_name}'")
+                        print("  - action:     × (multiply, id=1)")
+                        print(f"  - band_id:    {band_id}")
+                        try:
+                            sdk.add_property(
+                                membership=main_membership,
+                                property_obj=main_property_obj,
+                                expression_tag=var_obj,
+                                scenario_tag=scenario_obj,
+                                data_file_tag=data_file_obj,
+                                band_id=band_id,
+                            )
+                            print(
+                                f"[OK] Property '{property_name}' tagged with expression='{variable_name}' "
+                                f"(scenario='{scenario_name}', data_file='{data_file_name}')"
+                            )
+                        except Exception as exc:
+                            if "already exists" in str(exc).lower():
+                                print(f"[WARN] Property '{property_name}' expression tag already exists - skipping")
+                            else:
+                                raise
+
+                    membership_id_for_action = getattr(main_membership, "membership_id", None)
+                    property_id_for_action = getattr(main_property_obj, "property_id", None)
+                    expression_object_id_for_action = getattr(var_obj, "object_id", None)
+
+        finally:
+            # Restore original System object name after SDK context closes.
+            if _sys_renamed:
+                try:
+                    with sqlite3.connect(self.db_path) as _con:
+                        _con.execute(
+                            """
+                            UPDATE t_object SET name = ?
+                            WHERE name = 'System' AND class_id IN (
+                                SELECT class_id FROM t_class WHERE lang_id = ?
+                            )
+                            """,
+                            (_original_system_object_name, system_class_lang_id),
+                        )
+                        _con.commit()
+                    print(
+                        f"[OK] Restored System object name: "
+                        f"'System' -> '{_original_system_object_name}'"
+                    )
+                except Exception as _restore_exc:
+                    print(
+                        f"[WARN] Failed to restore System object name "
+                        f"'System' -> '{_original_system_object_name}': {_restore_exc}. "
+                        f"The model database may need manual correction."
+                    )
 
         # Step 4: Set action outside SDK context (both modes).
         print("\n[OK] Step  SETTING PROPERTY ACTION")

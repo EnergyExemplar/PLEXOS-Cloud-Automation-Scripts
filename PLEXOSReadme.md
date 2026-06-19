@@ -160,6 +160,7 @@ For local workflows outside of cloud simulation context, see the **[Automation S
 | TimeSeriesComparison | Compares 2–4 time-series datasets locally with statistics, plots, and optional DataHub upload | [Automation/PLEXOS/TimeSeriesComparison/](Automation/PLEXOS/TimeSeriesComparison/) |
 | UploadToDataHub | Uploads local files or directories to a DataHub path with glob pattern filtering and versioning support | [Automation/PLEXOS/UploadToDataHub/](Automation/PLEXOS/UploadToDataHub/) |
 | DownloadSolutions | Downloads all solutions for a given execution ID; lists simulations, resolves solution IDs from ModelIdentifiers, and downloads each solution into a per-solution subfolder | [Automation/PLEXOS/DownloadSolutions/](Automation/PLEXOS/DownloadSolutions/) |
+| DatahubSharesAndSymlinks | Create, list, and delete Datahub shares and symlinks (same-tenant and cross-tenant) | [Automation/PLEXOS/DatahubSharesAndSymlinks/](Automation/PLEXOS/DatahubSharesAndSymlinks/) |
 
 > **Note:** Automation scripts are self-contained — they do **not** rely on platform environment variables. All configuration is passed as explicit CLI arguments. Some scripts expose importable classes for use by other automation scripts. See the [Automation README](Automation/PLEXOS/) for details.
 

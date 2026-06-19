@@ -667,6 +667,180 @@ class TestSensitivityCreatorCreateSensitivity:
         self._call(tmp_dir, mock_sdk)
         mock_sdk.add_membership.assert_not_called()
 
+    def test_sdk_system_object_patched_when_none(self, tmp_dir):
+        """When sdk.system_object is None the fix patches it via get_object_by_name."""
+        mock_sdk, *_ = _mock_sdk_context(base_value=100.0)
+        mock_sdk.system_object = None
+
+        mock_sys_obj = MagicMock(object_id=99)
+        original_get_object = mock_sdk.get_object_by_name.side_effect
+
+        def get_object_by_name(*, class_lang_id, object_name):
+            if class_lang_id == 1 and object_name == "System":
+                return mock_sys_obj
+            return original_get_object(class_lang_id=class_lang_id, object_name=object_name)
+
+        mock_sdk.get_object_by_name.side_effect = get_object_by_name
+
+        self._call(tmp_dir, mock_sdk)
+
+        # system_object should have been patched back
+        assert mock_sdk.system_object is mock_sys_obj
+
+    def test_sdk_system_object_patched_with_non_default_name(self, tmp_dir):
+        """When System object is named 'DEMO' and sdk.system_object is None, patch resolves it."""
+        mock_sdk, *_ = _mock_sdk_context(base_value=100.0)
+        mock_sdk.system_object = None
+
+        mock_demo_obj = MagicMock(object_id=99)
+        original_get_object = mock_sdk.get_object_by_name.side_effect
+
+        def get_object_by_name(*, class_lang_id, object_name):
+            if class_lang_id == 1 and object_name == "DEMO":
+                return mock_demo_obj
+            return original_get_object(class_lang_id=class_lang_id, object_name=object_name)
+
+        mock_sdk.get_object_by_name.side_effect = get_object_by_name
+
+        original_get_membership = mock_sdk.get_membership_by_names.side_effect
+
+        def get_membership_by_names(*, parent_class_lang_id, collection_lang_id, parent_name, child_name):
+            if parent_name == "DEMO":
+                raise Exception("not found")
+            return original_get_membership(
+                parent_class_lang_id=parent_class_lang_id,
+                collection_lang_id=collection_lang_id,
+                parent_name=parent_name,
+                child_name=child_name,
+            )
+
+        mock_sdk.get_membership_by_names.side_effect = get_membership_by_names
+
+        self._call(tmp_dir, mock_sdk,
+                   query_first_object_names={1: "DEMO", 11: "Model"})
+
+        assert mock_sdk.system_object is mock_demo_obj
+
+    def test_system_object_rename_approach(self, tmp_dir):
+        """When system_object_name != 'System', the DB is renamed before SDK init."""
+        import sqlite3
+
+        # Create a real SQLite database with t_class and t_object tables.
+        db_path = tmp_dir / "reference.db"
+        with sqlite3.connect(str(db_path)) as con:
+            con.execute("CREATE TABLE t_class (class_id INTEGER, lang_id INTEGER, name TEXT)")
+            con.execute("INSERT INTO t_class VALUES (1, 1, 'System')")
+            con.execute("INSERT INTO t_class VALUES (2, 10, 'Scenario')")
+            con.execute("CREATE TABLE t_object (object_id INTEGER, class_id INTEGER, name TEXT)")
+            con.execute("INSERT INTO t_object VALUES (1, 1, 'DEMO')")
+            con.commit()
+
+        mock_sdk, *_ = _mock_sdk_context(base_value=100.0)
+        # Simulate: SDK finds system_object because we renamed before init.
+        mock_sdk.system_object = MagicMock(object_id=1)
+
+        creator = MOD.SensitivityCreator(
+            cli_path="mock_cli_path",
+            simulation_path=str(tmp_dir),
+            study_id="test_study_001",
+        )
+
+        def query_class_lang_id(_db_path, class_name):
+            return {"Scenario": 10, "Model": 11, "System": 1, "Data File": 2, "Variable": 3}[class_name]
+
+        with patch.object(MOD, "PLEXOSSDK", return_value=mock_sdk):
+            with patch.object(creator, "_resolve_ids", return_value=(1, 195, 201)):
+                with patch.object(MOD, "_query_class_lang_id", side_effect=query_class_lang_id):
+                    with patch.object(MOD, "_query_first_object_name_by_class_lang_id", side_effect=lambda _db, cid: {1: "DEMO", 11: "Model"}[cid]):
+                        with patch.object(MOD, "_query_collection_lang_id", return_value=200):
+                            with patch.object(MOD, "_query_property_lang_id", return_value=70):
+                                with patch.object(MOD, "_set_property_action"):
+                                    creator._create_sensitivity(
+                                        collection_name="System.Generators",
+                                        parent_object_name="DEMO",
+                                        child_object_name="Gen1",
+                                        property_name="MaxCapacity",
+                                        sensitivity=0.05,
+                                        data_file_name=None,
+                                        variable_name="Gen1_MaxCapacity_Var",
+                                        scenario_name="MySensitivity",
+                                        scenario_class_name="Scenario",
+                                        band_id=1,
+                                    )
+
+        # Verify that after the call, the DB has the original name restored.
+        with sqlite3.connect(str(db_path)) as con:
+            row = con.execute(
+                "SELECT name FROM t_object WHERE class_id = 1"
+            ).fetchone()
+        assert row[0] == "DEMO"
+
+    def test_leftover_recovery_rewrites_parent_object_name(self, tmp_dir):
+        """When a killed run left System object as 'System', parent_object_name is rewritten."""
+        import sqlite3
+
+        db_path = tmp_dir / "reference.db"
+        with sqlite3.connect(str(db_path)) as con:
+            con.execute("CREATE TABLE t_class (class_id INTEGER, lang_id INTEGER, name TEXT)")
+            con.execute("INSERT INTO t_class VALUES (1, 1, 'System')")
+            con.execute("INSERT INTO t_class VALUES (2, 10, 'Scenario')")
+            con.execute("CREATE TABLE t_object (object_id INTEGER, class_id INTEGER, name TEXT)")
+            # Leftover state: System object already named "System" (was "DEMO").
+            con.execute("INSERT INTO t_object VALUES (1, 1, 'System')")
+            con.commit()
+
+        mock_sdk, *_ = _mock_sdk_context(base_value=100.0)
+        mock_sdk.system_object = MagicMock(object_id=1)
+
+        creator = MOD.SensitivityCreator(
+            cli_path="mock_cli_path",
+            simulation_path=str(tmp_dir),
+            study_id="test_study_001",
+        )
+
+        def query_class_lang_id(_db_path, class_name):
+            return {"Scenario": 10, "Model": 11, "System": 1, "Data File": 2, "Variable": 3}[class_name]
+
+        captured_parent = {}
+
+        original_get_membership = mock_sdk.get_membership_by_names
+
+        def capture_get_membership(**kwargs):
+            captured_parent["parent_name"] = kwargs.get("parent_name")
+            return original_get_membership(**kwargs)
+
+        mock_sdk.get_membership_by_names = MagicMock(side_effect=capture_get_membership)
+
+        with patch.object(MOD, "PLEXOSSDK", return_value=mock_sdk):
+            with patch.object(creator, "_resolve_ids", return_value=(1, 195, 201)):
+                with patch.object(MOD, "_query_class_lang_id", side_effect=query_class_lang_id):
+                    # system_object_name resolves to "System" (leftover)
+                    with patch.object(MOD, "_query_first_object_name_by_class_lang_id", side_effect=lambda _db, cid: {1: "System", 11: "Model"}[cid]):
+                        with patch.object(MOD, "_query_collection_lang_id", return_value=200):
+                            with patch.object(MOD, "_query_property_lang_id", return_value=70):
+                                with patch.object(MOD, "_set_property_action"):
+                                    creator._create_sensitivity(
+                                        collection_name="System.Generators",
+                                        parent_object_name="DEMO",
+                                        child_object_name="Gen1",
+                                        property_name="MaxCapacity",
+                                        sensitivity=0.05,
+                                        data_file_name=None,
+                                        variable_name="Gen1_MaxCapacity_Var",
+                                        scenario_name="MySensitivity",
+                                        scenario_class_name="Scenario",
+                                        band_id=1,
+                                    )
+
+        # parent_object_name should have been rewritten to "System"
+        assert captured_parent["parent_name"] == "System"
+
+        # After the call, the DB should be restored to the original name.
+        with sqlite3.connect(str(db_path)) as con:
+            row = con.execute(
+                "SELECT name FROM t_object WHERE class_id = 1"
+            ).fetchone()
+        assert row[0] == "DEMO"
 
 # ---- main() tests ----------------------------------------------------------------------------------------------------------------------------
 
