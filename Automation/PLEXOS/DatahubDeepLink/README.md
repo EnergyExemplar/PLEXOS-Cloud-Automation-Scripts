@@ -5,33 +5,35 @@
 **Type:** Automation
 **Platform:** PLEXOS
 **Version:** 1.1
-**Last Updated:** 2026-05-15
+**Last Updated:** 2026-06-11
 
 ### Purpose
 
-Create, list, download, and delete Datahub deep links via CLI subcommands. Deep links provide secure, time-bounded sharing of Datahub files without requiring the recipient to have a PLEXOS Cloud account.
+Create, list, browse, download, and delete Datahub deep links via CLI subcommands. Deep links provide secure, time-bounded sharing of Datahub files without requiring the recipient to have a PLEXOS Cloud account.
 
-This folder contains **two scripts** (intentional deviation from one-script-per-folder convention — both serve the same "deep link download" capability with different dependency requirements):
+This folder contains **two scripts** (intentional deviation from one-script-per-folder convention — both serve the same "deep link management" capability with different dependency requirements):
 
-| Script | Purpose | Requires CloudSDK? |
-|---|---|---|
-| `datahub_deep_link.py` | Full deep link lifecycle (create, list, download, delete) | Yes |
-| `deep_link_http_download.py` | Batch download files from a folder deep link via raw HTTP | No — uses `requests` only |
+| Script | Purpose | Requires CloudSDK? | Subcommands |
+|---|---|---|---|
+| `datahub_deep_link.py` | Full deep link lifecycle (authenticated operations via SDK) | Yes | `create`, `list`, `browse`, `download`, `delete` |
+| `deep_link_http_download.py` | Browse and download deep links via raw HTTP (no authentication) | No — uses `urllib`/`requests` only | `browse`, `download` |
 
 ### Key Features
 
 **`datahub_deep_link.py`** — Full lifecycle management (requires CloudSDK):
 - **create** — Generate a signed deep link URL with configurable expiry and download limits
 - **list** — View all deep links created by the current user
-- **download** — Download a single file using the SDK's `download_deep_link` method
+- **browse** — List files inside a folder deep link (uses `sdk.datahub.browse_deep_link()`, no authentication needed)
+- **download** — Download a single file (uses `sdk.datahub.download_deep_link()`, no authentication needed)
 - **delete** — Revoke a deep link, making it immediately inactive
 
-**`deep_link_http_download.py`** — Lightweight batch downloader (no SDK needed):
-- Downloads multiple files from a folder deep link in a single invocation
-- Uses raw HTTP GET with `X-DeepLink-Signature` header
+**`deep_link_http_download.py`** — Raw HTTP browse and download (no SDK, CLI-agnostic):
+- **browse** — List files inside a folder deep link using raw HTTP (`urllib`) with `X-DeepLink-Signature` header
+- **download** — Download multiple files from a folder deep link in a single invocation via `requests`
 - URL-encodes file paths automatically (handles spaces and special characters)
 - Reports per-file success/failure with summary counts
 - Proper error exit codes for CI/CD integration
+- **Note:** To create deep links, use `datahub_deep_link.py` which handles authenticated creation via the SDK
 
 ---
 
@@ -63,6 +65,17 @@ This folder contains **two scripts** (intentional deviation from one-script-per-
 |---|---|---|
 | `--environment` | Yes | Cloud environment name |
 
+### `browse` Subcommand
+
+No authentication or environment login required — uses the SDK's `browse_deep_link` method.
+
+| Argument | Required | Default | Description |
+|---|---|---|---|
+| `--cli-path` | Yes | — | Path to PLEXOS Cloud CLI executable |
+| `--url` | Yes | — | The full deep link URL from creation output (download or browse URL) |
+| `--signature` | Yes | — | The X-DeepLink-Signature value (shown once at creation) |
+| `--file-path` | No | `None` | Subfolder path within the shared folder to browse |
+
 ### `download` Subcommand
 
 | Argument | Required | Default | Description |
@@ -82,6 +95,20 @@ This folder contains **two scripts** (intentional deviation from one-script-per-
 ---
 
 ## Arguments — `deep_link_http_download.py`
+
+This script uses subcommands: `browse` and `download`. Use `datahub_deep_link.py` to create deep links.
+
+### `browse` Subcommand
+
+No authentication needed — uses the pre-signed URL and signature over raw HTTP (`urllib`).
+
+| Argument | Required | Default | Description |
+|---|---|---|---|
+| `--url` | Yes | — | The full deep link URL (download or browse URL from creation) |
+| `--signature` | Yes | — | The `X-DeepLink-Signature` value (shown once at creation) |
+| `--file-path` | No | `None` | Subfolder path within the shared folder to list |
+
+### `download` Subcommand
 
 | Argument | Required | Description |
 |---|---|---|
@@ -109,11 +136,15 @@ requests           — deep_link_http_download.py only
 
 ### Minimum SDK / CLI Version
 
-`datahub_deep_link.py` requires **eecloud >= 1.5.2621** (PLEXOS Cloud CLI v1.5.2621.473+).
+The **create**, **list**, **download**, **browse**, and **delete** subcommands all require **eecloud >= 1.5.2854.495** (PLEXOS Cloud CLI v1.5.2854.495+).
 
-The deep link methods used:
-- `datahub.create_deep_link(relative_path, expiry_days, max_downloads)` → returns `DeepLinkResult` with `.DownloadUrl`, `.Signature`, `.Files[]`
+The **browse** subcommand uses `sdk.datahub.browse_deep_link()` introduced in eecloud 1.5.2854.495 — no authentication or environment login is needed, but the SDK must be installed.
+
+The eecloud methods used by the subcommands:
+- `datahub.create_deep_link(...)` → returns `DeepLinkResult` with `.DownloadUrl` and `.Signature`
 - `datahub.list_deep_links()` → returns object with `.DeepLinks[]` (each has `.UrlId`, `.RelativePath`, `.IsActive`, `.IsExpired`, `.CompletedDownloads`, `.DeepLinkEndTimeUtc`)
+- `datahub.download_deep_link(url, signature, output, file_path)` → downloads the file to disk and returns `.FileName`, `.FilePath`, and `.FileSize` in the response
+- `datahub.browse_deep_link(url, signature, file_path)` → returns object with `.DatahubSearchResults[]` (each has `.RelativePath`, `.FileSize`, `.LastModifiedAtUtc`, `.CreatedAtUtc`)
 - `datahub.revoke_deep_link(id)` → revokes a deep link by its `UrlId`
 
 These methods are not yet documented in `Documentation/CloudSDK.md`.
@@ -152,6 +183,25 @@ python datahub_deep_link.py download \
     --output-dir ./downloads
 ```
 
+### Browse a folder deep link (no authentication needed)
+
+```bash
+python datahub_deep_link.py browse \
+    --cli-path /path/to/plexos-cloud \
+    --url "https://datahub-api-eeprod-na.energyexemplar.com/1.0/deeplink/a1b2c3.../download/MyFolder?kst=..." \
+    --signature "abc123..."
+```
+
+Browse a specific subfolder within the deep link:
+
+```bash
+python datahub_deep_link.py browse \
+    --cli-path /path/to/plexos-cloud \
+    --url "https://datahub-api-eeprod-na.energyexemplar.com/1.0/deeplink/a1b2c3.../download/MyFolder?kst=..." \
+    --signature "abc123..." \
+    --file-path "SOLUTION_DATA"
+```
+
 ### Revoke a deep link
 
 ```bash
@@ -165,10 +215,20 @@ python datahub_deep_link.py delete \
 
 ## Usage Examples — `deep_link_http_download.py`
 
+**To create a deep link, use `datahub_deep_link.py`** (see examples above).
+
+### Browse a deep link folder (HTTP/urllib)
+
+```bash
+python deep_link_http_download.py browse \
+    --url "https://datahub-api-eeprod-na.energyexemplar.com/1.0/deeplink/98a6d0f1-.../download/" \
+    --signature "PQDxyzI+XVyPwdwVOCDn0BdU3PME0TTpY2nuCRYbxMc="
+```
+
 ### Download a single file from a folder deep link
 
 ```bash
-python deep_link_http_download.py \
+python deep_link_http_download.py download \
     --url "https://datahub-api-eeprod-na.energyexemplar.com/1.0/deeplink/98a6d0f1-.../download/MyFolder?kst=...&ket=..." \
     --signature "PQDxyzI+XVyPwdwVOCDn0BdU3PME0TTpY2nuCRYbxMc=" \
     --output-dir ./downloads \
@@ -178,7 +238,7 @@ python deep_link_http_download.py \
 ### Download multiple files in one invocation
 
 ```bash
-python deep_link_http_download.py \
+python deep_link_http_download.py download \
     --url "https://datahub-api-eeprod-na.energyexemplar.com/1.0/deeplink/98a6d0f1-.../download/MyFolder?kst=...&ket=..." \
     --signature "PQDxyzI+XVyPwdwVOCDn0BdU3PME0TTpY2nuCRYbxMc=" \
     --output-dir ./downloads \

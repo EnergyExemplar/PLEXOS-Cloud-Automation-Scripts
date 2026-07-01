@@ -21,3 +21,8 @@ my_download/
 test_download/
 test_download2/
 test_download3/
+
+# PLEXOS database artifacts
+*.his
+*.BAK
+*.bak

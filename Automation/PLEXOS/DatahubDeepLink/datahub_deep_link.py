@@ -1,19 +1,20 @@
 """
-Create, list, download, and delete Datahub deep links.
+Create, list, browse, download, and delete Datahub deep links.
 
 Standalone script — all configuration is passed as CLI arguments.
 Authenticated operations (create, list, delete) require interactive login.
-Download uses a pre-signed URL and signature — no authentication needed.
+Browse and download use a pre-signed URL and signature — no authentication needed.
 
 Subcommands:
     create    Create a new deep link for a Datahub file or folder
     list      List deep links created by the current user
+    browse    Browse contents of a folder deep link (no authentication)
     download  Download a file via deep link (no authentication)
     delete    Revoke a deep link, making it immediately inactive
 """
 import argparse
-import sys
 from pathlib import Path
+
 from eecloud.cloudsdk import CloudSDK, SDKBase
 
 
@@ -174,6 +175,72 @@ class DatahubDeepLinkManager:
         return True
 
 
+class DeepLinkBrowser:
+    """Browses folder contents via Datahub deep link — no authentication required.
+
+    Uses sdk.datahub.browse_deep_link() introduced in eecloud >= 1.5.2854.495.
+    No login or environment setup is needed.
+    """
+
+    def __init__(self, cli_path: str):
+        """
+        Args:
+            cli_path: Full path to the PLEXOS Cloud CLI executable.
+        """
+        self.sdk = CloudSDK(cli_path=cli_path)
+
+    def browse(
+        self,
+        url: str,
+        signature: str,
+        file_path: str | None = None,
+    ) -> bool:
+        """
+        Browse contents of a folder deep link.
+
+        Args:
+            url:       The full deep link URL (download or browse URL from creation).
+            signature: The X-DeepLink-Signature value (shown once at creation).
+            file_path: Optional subfolder path within the shared folder to browse.
+
+        Returns:
+            True if the listing was retrieved successfully, False otherwise.
+        """
+        response = self.sdk.datahub.browse_deep_link(
+            url=url,
+            signature=signature,
+            file_path=file_path,
+            print_message=False,
+        )
+
+        if response and hasattr(response[0], "Status") and response[0].Status == "Failed":
+            msg = getattr(response[0], "Message", "Unknown error")
+            print(f"[FAIL] {msg}")
+            return False
+
+        data = SDKBase.get_response_data(response)
+
+        if data is None or not data.Success:
+            print("[FAIL] Failed to browse deep link.")
+            return False
+
+        results = data.DatahubSearchResults or []
+        if not results:
+            print("[OK] No items found.")
+            return True
+
+        print(f"\n{'Name':<60} {'Size':>12}  {'Modified'}")
+        print("-" * 100)
+        for item in results:
+            name = (item.RelativePath or "")[:60]
+            size = f"{item.FileSize or 0:,}"
+            modified = (item.LastModifiedAtUtc or item.CreatedAtUtc or "")[:19].replace("T", " ")
+            print(f"{name:<60} {size:>12}  {modified}")
+
+        print(f"\n[OK] {len(results)} file(s) found.")
+        return True
+
+
 class DeepLinkDownloader:
     """Downloads files via Datahub deep link — no authentication required.
 
@@ -240,9 +307,9 @@ class DeepLinkDownloader:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    """Build the argument parser with create, list, download, and delete subcommands."""
+    """Build the argument parser with create, list, browse, download, and delete subcommands."""
     parser = argparse.ArgumentParser(
-        description="Create, list, download, and delete Datahub deep links.",
+        description="Create, list, browse, download, and delete Datahub deep links.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -268,6 +335,20 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     list_parser.add_argument("--cli-path", required=True, help="Path to PLEXOS Cloud CLI executable")
     list_parser.add_argument("--environment", required=True, help="Cloud environment name")
+
+    # ── browse ──────────────────────────────────────────────────────────────
+    browse_parser = subparsers.add_parser(
+        "browse",
+        help="Browse contents of a folder deep link (no authentication required)",
+    )
+    browse_parser.add_argument("--cli-path", required=True, help="Path to PLEXOS Cloud CLI executable")
+    browse_parser.add_argument("--url", required=True, help="The full deep link URL from creation output (download URL or browse URL)")
+    browse_parser.add_argument("--signature", required=True, help="The X-DeepLink-Signature value")
+    browse_parser.add_argument(
+        "--file-path",
+        default=None,
+        help="Subfolder path within the shared folder to browse (optional)",
+    )
 
     # ── download ────────────────────────────────────────────────────────────
     download_parser = subparsers.add_parser(
@@ -318,6 +399,14 @@ def main() -> int:
         elif args.command == "list":
             manager = DatahubDeepLinkManager(cli_path=args.cli_path, environment=args.environment)
             success = manager.list_deep_links()
+
+        elif args.command == "browse":
+            browser = DeepLinkBrowser(cli_path=args.cli_path)
+            success = browser.browse(
+                url=args.url,
+                signature=args.signature,
+                file_path=args.file_path,
+            )
 
         elif args.command == "download":
             downloader = DeepLinkDownloader(cli_path=args.cli_path)

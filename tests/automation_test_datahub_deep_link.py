@@ -2,9 +2,8 @@
 Unit tests for Automation/PLEXOS/DatahubDeepLink/datahub_deep_link.py.
 
 Covers subcommand routing, SDK kwarg correctness, and error handling
-for create, list, download, and delete operations.
+for create, list, browse, download, and delete operations.
 """
-import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -14,6 +13,7 @@ from .conftest import get_module
 
 MOD = get_module("auto_deep_link")
 DatahubDeepLinkManager = MOD.DatahubDeepLinkManager
+DeepLinkBrowser = MOD.DeepLinkBrowser
 DeepLinkDownloader = MOD.DeepLinkDownloader
 
 
@@ -307,6 +307,84 @@ class TestDownloader:
         assert result is False
 
 
+# ── DeepLinkBrowser ──────────────────────────────────────────────────────────
+
+class TestBrowser:
+    """Tests for the browse subcommand (SDK-based)."""
+
+    _URL = "https://api.example.com/1.0/deeplink/abc-123/download/MyFolder?x=1"
+    _SIGNATURE = "sig=="
+
+    @patch("auto_deep_link.SDKBase.get_response_data")
+    @patch("auto_deep_link.CloudSDK")
+    def test_browse_returns_true_on_success(self, mock_sdk_cls, mock_get_data):
+        sdk = MagicMock()
+        mock_sdk_cls.return_value = sdk
+        sdk.datahub.browse_deep_link.return_value = [SimpleNamespace(Status="Success")]
+        mock_get_data.return_value = SimpleNamespace(Success=True, DatahubSearchResults=[
+            SimpleNamespace(RelativePath="file.py", FileSize=100, LastModifiedAtUtc="2026-01-01T00:00:00Z", CreatedAtUtc="")
+        ])
+        result = DeepLinkBrowser(cli_path="/cli").browse(url=self._URL, signature=self._SIGNATURE)
+        assert result is True
+
+    @patch("auto_deep_link.SDKBase.get_response_data")
+    @patch("auto_deep_link.CloudSDK")
+    def test_browse_calls_sdk_with_correct_kwargs(self, mock_sdk_cls, mock_get_data):
+        sdk = MagicMock()
+        mock_sdk_cls.return_value = sdk
+        sdk.datahub.browse_deep_link.return_value = [SimpleNamespace(Status="Success")]
+        mock_get_data.return_value = SimpleNamespace(Success=True, DatahubSearchResults=[])
+        DeepLinkBrowser(cli_path="/cli").browse(url=self._URL, signature=self._SIGNATURE, file_path="sub/dir")
+        sdk.datahub.browse_deep_link.assert_called_once_with(
+            url=self._URL,
+            signature=self._SIGNATURE,
+            file_path="sub/dir",
+            print_message=False,
+        )
+
+    @patch("auto_deep_link.SDKBase.get_response_data")
+    @patch("auto_deep_link.CloudSDK")
+    def test_browse_returns_true_when_no_items(self, mock_sdk_cls, mock_get_data):
+        sdk = MagicMock()
+        mock_sdk_cls.return_value = sdk
+        sdk.datahub.browse_deep_link.return_value = [SimpleNamespace(Status="Success")]
+        mock_get_data.return_value = SimpleNamespace(Success=True, DatahubSearchResults=[])
+        result = DeepLinkBrowser(cli_path="/cli").browse(url=self._URL, signature=self._SIGNATURE)
+        assert result is True
+
+    @patch("auto_deep_link.SDKBase.get_response_data")
+    @patch("auto_deep_link.CloudSDK")
+    def test_browse_returns_false_on_api_failure(self, mock_sdk_cls, mock_get_data):
+        sdk = MagicMock()
+        mock_sdk_cls.return_value = sdk
+        sdk.datahub.browse_deep_link.return_value = [
+            SimpleNamespace(Status="Failed", Message="Invalid signature")
+        ]
+        mock_get_data.return_value = None
+        result = DeepLinkBrowser(cli_path="/cli").browse(url=self._URL, signature="bad")
+        assert result is False
+
+    @patch("auto_deep_link.SDKBase.get_response_data")
+    @patch("auto_deep_link.CloudSDK")
+    def test_browse_returns_false_when_data_none(self, mock_sdk_cls, mock_get_data):
+        sdk = MagicMock()
+        mock_sdk_cls.return_value = sdk
+        sdk.datahub.browse_deep_link.return_value = [SimpleNamespace(Status="Success")]
+        mock_get_data.return_value = None
+        result = DeepLinkBrowser(cli_path="/cli").browse(url=self._URL, signature=self._SIGNATURE)
+        assert result is False
+
+    @patch("auto_deep_link.SDKBase.get_response_data")
+    @patch("auto_deep_link.CloudSDK")
+    def test_browse_returns_false_when_success_false(self, mock_sdk_cls, mock_get_data):
+        sdk = MagicMock()
+        mock_sdk_cls.return_value = sdk
+        sdk.datahub.browse_deep_link.return_value = [SimpleNamespace(Status="Success")]
+        mock_get_data.return_value = SimpleNamespace(Success=False, DatahubSearchResults=None)
+        result = DeepLinkBrowser(cli_path="/cli").browse(url=self._URL, signature=self._SIGNATURE)
+        assert result is False
+
+
 # ── main() routing tests ─────────────────────────────────────────────────────
 
 class TestMain:
@@ -395,3 +473,27 @@ class TestMain:
             with pytest.raises(SystemExit) as exc_info:
                 MOD.main()
             assert exc_info.value.code != 0
+
+    @patch("auto_deep_link.SDKBase.get_response_data")
+    @patch("auto_deep_link.CloudSDK")
+    def test_main_browse_routes_correctly(self, mock_sdk_cls, mock_get_data):
+        sdk = MagicMock()
+        mock_sdk_cls.return_value = sdk
+        sdk.datahub.browse_deep_link.return_value = [SimpleNamespace(Status="Success")]
+        mock_get_data.return_value = SimpleNamespace(
+            Success=True,
+            DatahubSearchResults=[
+                SimpleNamespace(RelativePath="MyFolder/file.py", FileSize=999,
+                                LastModifiedAtUtc="2026-04-30T10:58:01Z", CreatedAtUtc="")
+            ]
+        )
+
+        with patch("sys.argv", [
+            "datahub_deep_link.py", "browse",
+            "--cli-path", "/cli",
+            "--url", "https://api.example.com/1.0/deeplink/abc/download/Folder?x=1",
+            "--signature", "sig==",
+        ]):
+            result = MOD.main()
+
+        assert result == 0

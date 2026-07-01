@@ -1,46 +1,121 @@
 """
-Download one or more files from a Datahub folder deep link using raw HTTP.
+Browse and download Datahub deep links using raw HTTP (no authentication needed).
 
-No CloudSDK or CLI required — uses the requests library directly.
-Accepts a deep link URL, signature, and a list of internal file paths.
-Each file is downloaded individually via GET with the X-DeepLink-Signature header.
+Subcommands:
+    browse    List files inside a folder deep link via raw HTTP/urllib
+    download  Download one or more files from a folder deep link via raw HTTP
+
+Note: To create deep links, use datahub_deep_link.py which handles authenticated creation via SDK.
 """
 import argparse
+import json
 import os
-import sys
+import re
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote
+from urllib.request import Request, urlopen
 
 import requests
 
+_WINDOWS_DRIVE_PATH = re.compile(r'^[a-zA-Z]:[/\\]')
+_PATH_TRAVERSAL = re.compile(r'(^|[/\\])\.\.([$\/\\]|$)')
 
-class DeepLinkBatchDownloader:
-    """Downloads files from a Datahub deep link via raw HTTP requests.
 
-    Useful for downloading multiple files from a folder-type deep link
-    without requiring the CloudSDK or CLI executable.
-    """
+class DeepLinkBrowser:
+    """Lists files inside a Datahub folder deep link via raw HTTP/urllib requests."""
 
-    def __init__(self, download_url: str, signature: str, output_dir: str):
+    # Replaces /download/ segment with /browse/ so users can pass either URL
+    _DOWNLOAD_TO_BROWSE = re.compile(
+        r"(/deeplink/[0-9a-fA-F\-]{32,36}/)download(/|\?|$)"
+    )
+
+    def __init__(self, url: str, signature: str):
         """
         Args:
-            download_url: The full deep link download URL.
+            url:       The full deep link URL (download or browse URL from creation).
             signature: The X-DeepLink-Signature value from deep link creation.
-            output_dir: Local directory to save downloaded files.
         """
+        # Normalise to the /browse/ endpoint
+        self.browse_url = self._DOWNLOAD_TO_BROWSE.sub(r"\1browse\2", url.rstrip("&").rstrip("?"))
+        self.signature = signature
+
+    def browse(self, file_path: str | None = None) -> bool:
+        """
+        List files at the root of the shared folder, or inside a subfolder.
+
+        Args:
+            file_path: Optional subfolder path within the shared folder to list.
+
+        Returns:
+            True if the listing was retrieved successfully, False otherwise.
+        """
+        url = self.browse_url
+        if file_path:
+            # Reject path traversal and absolute paths (Unix, Windows UNC, and drive-letter)
+            if (_PATH_TRAVERSAL.search(file_path)
+                    or file_path.startswith("/")
+                    or file_path.startswith("\\")
+                    or _WINDOWS_DRIVE_PATH.match(file_path)):
+                print("[FAIL] Rejected file-path: path must be relative without '..'")
+                return False
+            separator = "&" if "?" in url else "?"
+            url = f"{url}{separator}InternalFilePath={quote(file_path, safe='')}"
+
+        headers = {"X-DeepLink-Signature": self.signature}
+        try:
+            request = Request(url, headers=headers, method="GET")
+            with urlopen(request, timeout=60) as response:
+                response_body = response.read().decode("utf-8", errors="replace")
+        except HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace") if hasattr(e, "read") else str(e)
+            print(f"[FAIL] HTTP {e.code}: {body}")
+            return False
+        except URLError as e:
+            print(f"[FAIL] Request error: {e}")
+            return False
+
+        try:
+            data = json.loads(response_body)
+        except json.JSONDecodeError as e:
+            print(f"[FAIL] Could not parse response JSON: {e}")
+            return False
+
+        resources = data.get("Resources") or data.get("resources") or []
+        if not resources:
+            print("No files found.")
+            return True
+
+        # Sort by lastModifiedAtUtc descending (latest files first)
+        resources = sorted(resources, key=lambda r: r.get("lastModifiedAtUtc") or "", reverse=True)
+
+        # Print formatted table
+        print(f"{'Size':>15}  {'Last Modified':<24}  Path")
+        print(f"{'-'*15}  {'-'*24}  {'-'*40}")
+        for r in resources:
+            # File size is nested in versions[0] if it exists, otherwise None
+            versions = r.get("versions") or []
+            file_size = versions[0].get("fileSize") if versions else None
+            size_str = f"{file_size:,} B" if file_size is not None else "-"
+            modified = (r.get("lastModifiedAtUtc") or "")[:19].replace("T", " ")
+            path = r.get("relativePath") or ""
+            print(f"{size_str:>15}  {modified:<24}  {path}")
+
+        print(f"\n[OK] {len(resources)} resource(s) listed.")
+        return True
+
+
+
+
+
+class DeepLinkBatchDownloader:
+    """Downloads files from a Datahub deep link via raw HTTP requests."""
+
+    def __init__(self, download_url: str, signature: str, output_dir: str):
         self.download_url = download_url.rstrip("&").rstrip("?")
         self.signature = signature
         self.output_dir = output_dir
 
     def download(self, file_paths: list[str]) -> bool:
-        """
-        Download a list of files from the deep link.
-
-        Args:
-            file_paths: List of internal file paths relative to the shared folder.
-
-        Returns:
-            True if all files downloaded successfully, False if any failed.
-        """
         os.makedirs(self.output_dir, exist_ok=True)
 
         headers = {"X-DeepLink-Signature": self.signature}
@@ -50,9 +125,11 @@ class DeepLinkBatchDownloader:
         failed = 0
 
         for file_path in file_paths:
-            # Reject path traversal attempts
-            if ".." in file_path or file_path.startswith("/") or file_path.startswith("\\"):
-                print(f"[FAIL] {file_path} — rejected: path must be relative without '..'")
+            if (_PATH_TRAVERSAL.search(file_path)
+                    or file_path.startswith("/")
+                    or file_path.startswith("\\")
+                    or _WINDOWS_DRIVE_PATH.match(file_path)):
+                print(f"[FAIL] {file_path} - rejected: path must be relative without '..'")
                 failed += 1
                 continue
 
@@ -62,12 +139,11 @@ class DeepLinkBatchDownloader:
             try:
                 response = requests.get(url, headers=headers, timeout=300, stream=True)
             except requests.RequestException as e:
-                print(f"[FAIL] {file_path} — request error: {e}")
+                print(f"[FAIL] {file_path} - request error: {e}")
                 failed += 1
                 continue
 
             if response.ok:
-                # Preserve folder structure under output_dir
                 dest = os.path.join(self.output_dir, file_path.replace("/", os.sep))
                 os.makedirs(os.path.dirname(dest), exist_ok=True)
                 size = 0
@@ -78,7 +154,7 @@ class DeepLinkBatchDownloader:
                 print(f"[OK] Downloaded: {file_path} ({size:,} bytes)")
                 succeeded += 1
             else:
-                print(f"[FAIL] {file_path} — HTTP {response.status_code}: {response.text}")
+                print(f"[FAIL] {file_path} - HTTP {response.status_code}: {response.text}")
                 failed += 1
 
         print(f"\n[OK] {succeeded} succeeded, {failed} failed out of {len(file_paths)} file(s).")
@@ -87,29 +163,29 @@ class DeepLinkBatchDownloader:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Download files from a Datahub folder deep link via raw HTTP.",
+        description="Browse and download Datahub deep links using raw HTTP (no authentication needed).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog=(
-            "Examples:\n"
-            "  # Download a single file\n"
-            "  python deep_link_http_download.py \\\n"
-            '    --url "https://datahub-api-eeprod-na.energyexemplar.com/1.0/deeplink/..." \\\n'
-            '    --signature "PQDxyzI+XVy..." \\\n'
-            '    --output-dir ./downloads \\\n'
-            '    --files "SOLUTION_DATA/result.parquet"\n'
-            "\n"
-            "  # Download multiple files\n"
-            "  python deep_link_http_download.py \\\n"
-            '    --url "https://datahub-api-eeprod-na.energyexemplar.com/1.0/deeplink/..." \\\n'
-            '    --signature "PQDxyzI+XVy..." \\\n'
-            '    --output-dir ./downloads \\\n'
-            '    --files "SOLUTION_DATA/file1.parquet" "SOLUTION_DATA/file2.parquet"\n'
-        ),
     )
-    parser.add_argument("--url", required=True, help="The full deep link download URL")
-    parser.add_argument("--signature", required=True, help="The X-DeepLink-Signature value")
-    parser.add_argument("--output-dir", required=True, help="Local directory to save downloaded files")
-    parser.add_argument(
+    subparsers = parser.add_subparsers(dest="subcommand", required=True)
+
+    browse_parser = subparsers.add_parser(
+        "browse",
+        help="List files inside a folder deep link (no authentication needed)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    browse_parser.add_argument("--url", required=True, help="The full deep link URL (download or browse URL from creation)")
+    browse_parser.add_argument("--signature", required=True, help="The X-DeepLink-Signature value")
+    browse_parser.add_argument("--file-path", default=None, help="Subfolder path within the shared folder to browse (optional)")
+
+    download_parser = subparsers.add_parser(
+        "download",
+        help="Download one or more files from a folder deep link",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    download_parser.add_argument("--url", required=True, help="The full deep link download URL")
+    download_parser.add_argument("--signature", required=True, help="The X-DeepLink-Signature value")
+    download_parser.add_argument("--output-dir", required=True, help="Local directory to save downloaded files")
+    download_parser.add_argument(
         "--files",
         required=True,
         nargs="+",
@@ -119,6 +195,11 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
+        if args.subcommand == "browse":
+            browser = DeepLinkBrowser(url=args.url, signature=args.signature)
+            success = browser.browse(file_path=args.file_path)
+            return 0 if success else 1
+
         downloader = DeepLinkBatchDownloader(
             download_url=args.url,
             signature=args.signature,
@@ -133,8 +214,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
-
-
-
-

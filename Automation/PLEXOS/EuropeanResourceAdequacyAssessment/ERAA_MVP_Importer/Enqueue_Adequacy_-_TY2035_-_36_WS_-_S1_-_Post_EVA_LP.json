@@ -1,0 +1,73 @@
+{
+  "StudyId": "<YOUR_STUDY_ID>",
+  "ChangeSetId": "<YOUR_CHANGESET_ID>",
+  "Models": [
+    "Adequacy - TY2035 - 36 WS - S1 - Post_EVA_LP"
+  ],
+  "SimulationOptions": {
+    "SupressSolutionWriting": false,
+    "BuildSelectedDataFiles": false,
+    "Locale": 1033,
+    "OutputFilters": [],
+    "CongestionInsights": {
+      "CacheCongestionInsightsData": false,
+      "ExportCachedParquet": false
+    },
+    "SimulationTasks": [],
+    "SolutionOptions": {
+      "ParquetSchemaVersion": 2,
+      "Name": null,
+      "Description": null,
+      "CreateParquetViewsDatabase": false
+    },
+    "EnableRealTimeLog": true,
+    "IsModelDistributionRun": false,
+    "SimulationRunType": 2,
+    "SnapshotOptions": {
+      "EnablePlexosSnapshots": false,
+      "EnablePlexosSolverSnapshots": null,
+      "PlexosSnapshotMonitorMinutes": 10,
+      "EnableReReporting": false
+    },
+    "SolutionReportIds": []
+  },
+  "SimulationAffinity": null,
+  "ParallelizationOptions": {
+    "RequestedCpuCores": 2,
+    "MinimumMemoryInGb": 16.00,
+    "InstanceCount": null,
+    "Index": null,
+    "SplitOptions": {
+      "SplitType": "UserDefinedSamples",
+      "SplitDivisions": 36,
+      "ChronologicalStepType": null,
+      "PlanningHorizonStepType": null,
+      "RunOnSingleInstance": false
+    },
+    "IsAutoStitchEnabled": true,
+    "StitchOptions": null
+  },
+  "SimulationData": [],
+  "SolutionData": [],
+  "DataConfiguration": null,
+  "SimulationEngine": {
+    "EngineId": "144c3ccf-ac33-4a93-b01f-115a7e9f7fbd",
+    "Version": "12.000.003.2604284",
+    "Name": "12.0 R03",
+    "EngineType": "Performance",
+    "OperatingSystem": 1,
+    "OptimizationEngine": 0
+  },
+  "Tags": null,
+  "Source": "CloudUI",
+  "Priority": 1,
+  "RequestedCpuCores": 2,
+  "MinimumMemoryInGb": 16.00,
+  "RunParameters": [],
+  "RequestedInstanceType": null,
+  "SimulationType": "MonteCarlo",
+  "SimulationGroupId": null,
+  "VMInstanceProperties": null,
+  "Description": null,
+  "IsScheduled": false
+}
