@@ -107,11 +107,11 @@ class DataHubManager:
         local_path = self._downloader.download_file(datahub_path, Path(temp_dir))
         return str(local_path)
 
-    def upload(self, local_file_path: str, datahub_path: str) -> bool:
+    def upload(self, local_dir_path: str, datahub_path: str) -> bool:
         if not self._uploader:
             return False
         try:
-            self._uploader.upload_directory(Path(local_file_path), datahub_path, pattern="*", overwrite=True)
+            self._uploader.upload_directory(Path(local_dir_path), datahub_path, pattern="**/*")
             return True
         except Exception as e:
             print(f"❌ Failed to upload to DataHub: {str(e)}")

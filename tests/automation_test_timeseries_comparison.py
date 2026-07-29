@@ -216,6 +216,40 @@ class TestParseDatetimeColumn:
         df = pd.DataFrame({"date": dates + ["not_a_date"]})
         result = _comparator(["a.csv", "b.csv"]).parse_datetime_column(df.copy(), "date", "File 1")
         assert result is not None
+        assert "_parsed_datetime" in result.columns
+
+
+# ── DataHubManager.upload regression ──────────────────────────────────────────
+
+class TestDataHubManagerUpload:
+    """Regression tests to ensure upload_directory is called without unsupported kwargs."""
+
+    def test_upload_calls_upload_directory_without_overwrite(self, tmp_path):
+        """upload_directory must not receive 'overwrite' keyword argument."""
+        from unittest.mock import MagicMock
+
+        manager = MOD.DataHubManager(cli_path="/fake/cli", environment="test")
+        mock_uploader = MagicMock()
+        manager._uploader = mock_uploader
+
+        result = manager.upload(str(tmp_path), "Remote/Output/Path")
+
+        mock_uploader.upload_directory.assert_called_once()
+        _, kwargs = mock_uploader.upload_directory.call_args
+        assert "overwrite" not in kwargs, (
+            "upload_directory should not be called with 'overwrite' keyword argument"
+        )
+        assert result is True
+
+    def test_upload_returns_false_when_no_uploader(self):
+        """upload() returns False when _uploader is None (no cli_path/environment)."""
+        manager = MOD.DataHubManager()
+        assert manager.upload("/some/path", "Remote/Path") is False
+
+
+# ── parse_datetime_column (continued) ─────────────────────────────────────────
+
+class TestParseDatetimeColumnContinued:
 
     def test_returns_none_for_unparseable_column(self):
         df = pd.DataFrame({"date": ["foo", "bar", "baz"] * 5})

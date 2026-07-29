@@ -1,28 +1,38 @@
-<!--ALWAYS refer to SDK_METHODS.md to ensure examples are accurate and show correct parameters. Ensure SDK_METHODS.md is accurate and up to date. STOP and ask if you have a question-->
-# PLEXOS SDK - TLDR Quick Reference
+# PLEXOS SDK 1.0.179+
 
 ## 📋 Table of Contents
-- [PLEXOS SDK - TLDR Quick Reference](#plexos-sdk---tldr-quick-reference)
+- [PLEXOS SDK 1.0.179+](#plexos-sdk-10179)
   - [📋 Table of Contents](#-table-of-contents)
   - [🚀 Installation \& Setup](#-installation--setup)
   - [🔄 Transactions](#-transactions)
-  - [🏗️ Hydrated Models](#️-hydrated-models)
+      - [Manual Transaction Control](#manual-transaction-control)
+  - [🏗️ Hydrated Models](#%EF%B8%8F-hydrated-models)
   - [🔧 Basic Usage](#-basic-usage)
   - [📋 Core Operations](#-core-operations)
     - [Objects](#objects)
     - [Attributes](#attributes)
+      - [Method 1: Using Attribute Objects (Recommended for bulk operations)](#method-1-using-attribute-objects-recommended-for-bulk-operations)
+      - [Method 2: Using Lang IDs (Simpler for single assignments but has to make extra database calls so inefficient for loops and bulk operations)](#method-2-using-lang-ids-simpler-for-single-assignments-but-has-to-make-extra-database-calls-so-inefficient-for-loops-and-bulk-operations)
+      - [Bulk-insert attributes](#bulk-insert-attributes)
+      - [Update \& Remove Attributes](#update--remove-attributes)
     - [Memberships](#memberships)
     - [Properties](#properties)
     - [Memos](#memos)
-    - [Report Configuration](#report-configuration)
+      - [Data Memos](#data-memos)
+      - [Membership Memos](#membership-memos)
+      - [Object Memos (Custom Columns)](#object-memos-custom-columns)
     - [Categories](#categories)
-  - [⏰ Time Management](#-time-management)
+  - [🛠️ Helpers \& Utilities](#%EF%B8%8F-helpers--utilities)
     - [Horizons](#horizons)
     - [Date Utilities](#date-utilities)
+    - [Report Configuration](#report-configuration)
   - [🚀 Quick Start Example](#-quick-start-example)
-  - [🗄️ Database Management](#️-database-management)
+  - [🗄️ Database Management](#%EF%B8%8F-database-management)
     - [XML Conversion](#xml-conversion)
+  - [⚙️ Database Configuration](#%EF%B8%8F-database-configuration)
+  - [🔍 Database Validation](#-database-validation)
   - [🎯 Enum Generation](#-enum-generation)
+    - [From SDK (preferred — no separate step)](#from-sdk-preferred--no-separate-step)
   - [🎯 Data Enums/Identifiers](#-data-enumsidentifiers)
   - [🔍 Query Methods](#-query-methods)
   - [🔧 Error Handling](#-error-handling)
@@ -30,8 +40,12 @@
   - [🌱 Seed Data Management](#-seed-data-management)
     - [Why Seed Data?](#why-seed-data)
     - [How Seed Data Is Produced](#how-seed-data-is-produced)
+      - [Step-by-Step: Building a Seed Data Package](#step-by-step-building-a-seed-data-package)
     - [Creating Databases from Seed Data](#creating-databases-from-seed-data)
-  - [⚠️ Important Notes](#️-important-notes)
+    - [Additional CLI Commands](#additional-cli-commands)
+  - [⚠️ Important Notes](#%EF%B8%8F-important-notes)
+    - [Automatic System Relationships](#automatic-system-relationships)
+    - [Property Duplicate Detection](#property-duplicate-detection)
     - [Data Integrity](#data-integrity)
     - [Performance](#performance)
     - [Limitations](#limitations)
@@ -111,26 +125,34 @@ if data.tags:
 
 ```python
 from plexos_sdk import PLEXOSSDK
-from plexos_sdk.models.plexos_models import * # access to all classes
-from plexos_sdk.exceptions import * # access to any custom exceptions
-#domain/version specific enum.py file
-from electric_enums import * # access to ENUMS
+from plexos_sdk.enums.system_enums import * # access to ENUMS
+# Or regenerate from your own database (replaces shipped file, no import change):
+# sdk.generate_enums()
 
-# Connect to database (accepts str or Path)
 with PLEXOSSDK("my_model.db") as sdk:
     try:
         with sdk.transaction():
-            # All write/update operations go here. read/query also acceptable but not required
-            sdk.create_something_fantastic()
-        
-        # Any read/query operations go here (outside transaction)
-        sdk.read_interesting_data()
+            # Add a generator — returns hydrated Object with relationships loaded
+            gen = sdk.add_object(ClassEnum.Generator, "WindFarm1")
+
+            # Access the auto-created System -> Generator membership via the model
+            membership = gen.child_memberships[0]
+
+            # Set capacity for a date period
+            capacity = sdk.get_property(
+                ClassEnum.System, CollectionEnum.Generators, PropertyEnum_Generators.MaxCapacity
+            )
+            data = sdk.add_property(
+                membership, capacity, 500.0,
+                date_from="2030-01-01T00:00:00",
+                date_to="2030-12-31T00:00:00",
+            )
+
+        # Hydrated models give you access to the full relationship graph
+        print(f"{gen.name} -> {data.property_ref.name}: {data.value}")
 
     except Exception as e:
         print(f"Operations failed: {e}")
-        import traceback
-        traceback.print_exc()
-        return
 ```
 
 
@@ -150,6 +172,27 @@ obj: Object = sdk.get_object_by_name(class_lang_id=ClassEnum.Generator, object_n
 
 # Remove object -> returns bool
 success: bool = sdk.remove_object_by_name(class_lang_id=ClassEnum.Generator, object_name="Generator1")
+
+# Bulk insert objects (high-performance bulk INSERT)
+from plexos_sdk import ObjectEntry
+
+entries = [
+    ObjectEntry(class_lang_id=ClassEnum.Generator, name=f"Gen_{i}", description="Wind turbine")
+    for i in range(100)
+]
+generators: list[Object] = sdk.bulk_add_objects(entries)  # returns hydrated Objects with system memberships
+
+# Deep-copy an object: fresh GUID + system membership, fresh UIDs, clones memberships,
+# property data (Band/Tag/Text/DateFrom/DateTo), and attributes.
+clone: Object = sdk.copy_object(source=generator, new_name="Generator1_Copy")
+
+# Selective clone — copy structure only, no property data or attributes
+shell: Object = sdk.copy_object(
+    source=generator,
+    new_name="Generator1_Empty",
+    include_properties=False,
+    include_attributes=False,
+)
 ```
 
 
@@ -160,11 +203,11 @@ success: bool = sdk.remove_object_by_name(class_lang_id=ClassEnum.Generator, obj
 # Get attribute object first -> returns Attribute 
 attribute_obj: Attribute = sdk.get_attribute(
     class_lang_id=ClassEnum.Generator, 
-    attribute_lang_id=AttributeEnum_Generator.MaxOutput
+    attribute_lang_id=AttributeEnum_Generator.Latitude
 )
 
 # Add attribute using object -> returns AttributeData
-attr_data: AttributeData = sdk.add_attribute(object_obj=generator_obj, attribute=attribute_obj, value=600.0)
+attr_data: AttributeData = sdk.add_attribute(object_obj=generator_obj, attribute=attribute_obj, value=40.7128)
 
 # Get attribute value -> returns float value
 value: float = sdk.get_attribute_value(object_obj=generator_obj, attribute=attribute_obj)
@@ -175,22 +218,39 @@ value: float = sdk.get_attribute_value(object_obj=generator_obj, attribute=attri
 # Add attribute using lang_id (simpler for single assignments) -> returns AttributeData
 attr_data: AttributeData = sdk.add_attribute_by_lang_id(
     object_obj=generator_obj,
-    attribute_lang_id=AttributeEnum_Generator.MaxOutput,
-    value=600.0
+    attribute_lang_id=AttributeEnum_Generator.Latitude,
+    value=40.7128
 )
 
 # Get attribute value by IDs -> returns float value
 value: float = sdk.get_attribute_value_by_ids(
     class_lang_id=ClassEnum.Generator,
     object_name="Generator1",
-    attribute_lang_id=AttributeEnum_Generator.MaxOutput
+    attribute_lang_id=AttributeEnum_Generator.Latitude
 )
+```
+
+#### Bulk-insert attributes
+```python
+# e.g. Latitude/Longitude on hundreds of generators
+from plexos_sdk import AttributeEntry
+
+lat_attr = sdk.get_attribute(ClassEnum.Generator, AttributeEnum_Generator.Latitude)
+lng_attr = sdk.get_attribute(ClassEnum.Generator, AttributeEnum_Generator.Longitude)
+
+entries = []
+for gen, lat, lng in generator_coords:
+    entries.append(AttributeEntry(object_obj=gen, attribute=lat_attr, value=lat))
+    entries.append(AttributeEntry(object_obj=gen, attribute=lng_attr, value=lng))
+
+count: int = sdk.bulk_add_attributes(entries)
+# Raises AttributeAlreadyExistsError on duplicate. Auto-enables attributes on first use.
 ```
 
 #### Update & Remove Attributes
 ```python
 # Update an existing attribute value -> returns AttributeData
-updated: AttributeData = sdk.update_attribute(object_obj=generator_obj, attribute=attribute_obj, value=750.0)
+updated: AttributeData = sdk.update_attribute(object_obj=generator_obj, attribute=attribute_obj, value=41.0)
 
 # Remove an attribute from an object -> returns bool
 success: bool = sdk.remove_attribute(object_obj=generator_obj, attribute=attribute_obj)
@@ -213,6 +273,16 @@ success: bool = sdk.remove_membership_by_lang_id(parent_class_lang_id=ClassEnum.
 parents: List[Object] = sdk.get_parent_members(parent_class_lang_id=ClassEnum.Fuel, collection_lang_id=CollectionEnum.Fuels, child_name="ChildName")
 children: List[Object] = sdk.get_child_members(parent_class_lang_id=ClassEnum.Fuel, collection_lang_id=CollectionEnum.Fuels, parent_name="ParentName")
 memberships: List[Membership] = sdk.get_child_memberships(parent_class_lang_id=ClassEnum.Fuel, collection_lang_id=CollectionEnum.Fuels, parent_name="ParentName")
+
+# Bulk insert memberships (high-performance bulk INSERT)
+from plexos_sdk import MembershipEntry
+
+gen_node_coll = sdk.get_collection(ClassEnum.Generator, CollectionEnum.Nodes)
+entries = [
+    MembershipEntry(collection=gen_node_coll, parent=gen, child=node)
+    for gen, node in zip(generators, nodes)
+]
+memberships: list[Membership] = sdk.bulk_add_memberships(entries)
 ```
 
 
@@ -222,7 +292,7 @@ memberships: List[Membership] = sdk.get_child_memberships(parent_class_lang_id=C
 property_obj = sdk.get_property(
     parent_class_lang_id=ClassEnum.System,
     collection_lang_id=CollectionEnum.Generators,
-    property_lang_id=PropertyEnum_Generators.MaxOutput
+    property_lang_id=PropertyEnum_Generators.MaxCapacity
 )
 
 # Basic property
@@ -237,23 +307,34 @@ data: Data = sdk.add_property(
     date_to="2030-12-31T00:00:00"
 )
 
-# With text creation
+# With text creation (writes to t_text with appropriate class_id)
 data: Data = sdk.add_property(
     membership=membership, 
     property_obj=property_obj, 
     value=500.0,
     data_file_text="path/to/data.csv",
-    time_slice_text="M7-12"  # July-December
+    time_slice_text="M7-12",  # July-December
+    expression_text="x * 1.5"  # Expression text (Variable class)
 )
 
-# With tags
+# With tags (writes to t_tag referencing existing objects)
 data: Data = sdk.add_property(
     membership=membership, 
     property_obj=property_obj, 
     value=500.0,
     data_file_tag=data_file_obj,
     scenario_tag=scenario_obj,
-    expression_tag=variable_obj
+    expression_tag=variable_obj  # mutually exclusive with expression_text
+)
+
+# Timeslice: pattern string vs named object reference (both can coexist)
+peak = sdk.add_object(ClassEnum.Timeslice, "PEAK")  # named reusable timeslice
+data: Data = sdk.add_property(
+    membership=membership,
+    property_obj=property_obj,
+    value=500.0,
+    time_slice_text="H9-19",    # pattern: hours 9-19 every day (t_text)
+    time_slice_tag=peak,         # named ref: reusable Timeslice object (t_tag)
 )
 
 # Method 1: Lookup action first (recommended for bulk operations)
@@ -283,7 +364,11 @@ data: Data = sdk.add_property(
 
 # Other property operations
 value: float = sdk.get_property_value(membership=membership, property_obj=property_obj)
+# update_property targets ONE row deterministically by (membership, property, band, scenario, dates).
+# scenario_tag omitted/None => the base (untagged) row. A miss raises PropertyDataNotFoundError
+# (pass create_if_missing=True to create it); >1 match raises AmbiguousPropertyDataError.
 updated_data: Data = sdk.update_property(membership=membership, property_obj=property_obj, value=new_value)
+scenario_row: Data = sdk.update_property(membership, property_obj, new_value, scenario_tag=scenario_obj)  # a scenario override
 success: bool = sdk.remove_property(membership=membership, property_obj=property_obj)
 
 # Retrieve all Data rows for a membership+property (full property graph)
@@ -293,9 +378,48 @@ all_data: List[Data] = sdk.get_property_data_all(membership=membership, property
 data: Data = sdk.get_property_data(membership=membership, property_obj=property_obj, scenario_tag=scenario_obj)
 
 # Bulk operations — add/update/delete across all memberships in a collection for a scenario
-added: int = sdk.bulk_add_property(ClassEnum.System, CollectionEnum.Generators, capacity_prop, 500.0, scenario_tag=scenario_obj)
-updated: int = sdk.bulk_update_property(scenario_obj, property_obj=capacity_prop, transform=lambda v: v * 1.1)  # +10%
-deleted: int = sdk.bulk_delete_property(scenario_obj, property_obj=capacity_prop)
+capacity = sdk.get_property(ClassEnum.System, CollectionEnum.Generators, PropertyEnum_Generators.MaxCapacity)
+added: int = sdk.bulk_add_property(ClassEnum.System, CollectionEnum.Generators, capacity, 500.0, scenario_tag=scenario_obj)
+updated: int = sdk.bulk_update_property(scenario_obj, property_obj=capacity, transform=lambda v: v * 1.1)  # +10%
+deleted: int = sdk.bulk_delete_property(scenario_obj, property_obj=capacity)
+
+# Batch insert — different values per membership (high-performance bulk INSERT)
+# All bulk_*/batch_* methods chunk INSERTs internally — pass arbitrarily large
+# entry lists; the SDK stays under SQLite's host-parameter cap automatically.
+from plexos_sdk import PropertyEntry
+
+entries = [
+    PropertyEntry(membership=mem, property_obj=capacity, value=val, scenario_tag=scenario_obj)
+    for mem, val in zip(memberships, values)  # e.g., 1000 generators with unique MaxCapacity
+]
+inserted: int = sdk.batch_add_properties(entries)
+
+# PropertyEntry supports all add_property parameters: tags, texts, dates, bands, actions
+entries_with_details = [
+    PropertyEntry(
+        membership=mem,
+        property_obj=capacity,
+        value=500.0,
+        scenario_tag=scenario_obj,
+        data_file_tag=data_file_obj,
+        date_from="2030-01-01T00:00:00",
+        date_to="2030-12-31T00:00:00",
+        band_id=2,
+    )
+]
+inserted: int = sdk.batch_add_properties(entries_with_details)
+
+# Batch UPDATE — set each existing row to its own externally-sourced value, atomically.
+# Update-only counterpart to batch_add_properties. Each entry resolves to one existing row by
+# (membership, property, band, scenario, dates). All-or-nothing: any miss or ambiguous match
+# rolls back the whole batch (use batch_add_properties to insert). Returns count changed.
+from plexos_sdk import PropertyUpdateEntry
+
+update_entries = [
+    PropertyUpdateEntry(membership=mem, property_obj=capacity, value=val, scenario_tag=scenario_obj)
+    for mem, val in zip(memberships, new_values)  # e.g., 1000 generators, each a different MaxCapacity
+]
+changed: int = sdk.batch_update_properties(update_entries)
 ```
 
 ### Memos
@@ -351,72 +475,6 @@ success: bool = sdk.remove_memo_object(object=generator_obj, column=column)
 ```
 
 
-
-### Report Configuration
-```python
-# Create a Report object first -> returns Object
-report_object: Object = sdk.add_object(class_lang_id=ClassEnum.Report, object_name="TestReport")
-
-# Configure report attributes (what types of output to generate) -> returns AttributeData
-attr1: AttributeData = sdk.add_attribute_by_lang_id(report_object, AttributeEnum_Report.OutputResultsByHour, -1)
-attr2: AttributeData = sdk.add_attribute_by_lang_id(report_object, AttributeEnum_Report.OutputResultsByDay, -1)
-attr3: AttributeData = sdk.add_attribute_by_lang_id(report_object, AttributeEnum_Report.OutputStatistics, -1)
-attr4: AttributeData = sdk.add_attribute_by_lang_id(report_object, AttributeEnum_Report.OutputResultsBySample, -1)
-
-# Add report configuration for selected reporting properties
-reporting_lang_ids = [
-    ReportingEnum_Generators.Generation,
-    ReportingEnum_Generators.GenerationCost,
-    ReportingEnum_Generators.NetRevenue,
-    ReportingEnum_Fuels.Cost,
-    ReportingEnum_Batteries.Load,
-    ReportingEnum_Batteries.Soc
-]
-
-for reporting_lang_id in reporting_lang_ids:
-    # Add report configuration -> returns Report
-    report_config: Report = sdk.add_report_configuration(
-        object_obj=report_object,
-        reporting_lang_id=reporting_lang_id,
-        phase_id=4,
-        report_period=True,
-        report_samples=True,
-        report_statistics=True,
-        report_summary=True,
-        write_flat_files=False
-    )
-
-# Convenience: create report, attach to model, and configure properties in one call
-report: Object = sdk.create_report(
-    model_obj=model,
-    report_name="My Report",
-    reporting_lang_ids=[
-        ReportingEnum_Generators.Generation,
-        ReportingEnum_Generators.GenerationCost,
-        ReportingEnum_Regions.Price,
-    ],
-    report_period=True,
-    report_summary=True,
-)
-
-# Batch configure reporting properties on an existing Report object -> returns List[Report]
-configs: List[Report] = sdk.configure_report_properties(
-    object_obj=report_object,
-    reporting_lang_ids=[ReportingEnum_Generators.Generation, ReportingEnum_Fuels.Cost],
-    phase_id=4,
-    report_period=True,
-    report_summary=True
-)
-
-# Query existing report configurations -> returns List[Report]
-existing: List[Report] = sdk.get_report_configurations(
-    object_obj=report_object,
-    reporting_lang_id=ReportingEnum_Generators.Generation,
-    phase_id=4  # Optional filter
-)
-```
-
-
 ### Categories
 ```python
 # Add category -> returns Category
@@ -435,25 +493,29 @@ success: bool = sdk.add_object_category(class_lang_id=ClassEnum.Generator, objec
 objects: List[Object] = sdk.get_objects_in_category(class_lang_id=ClassEnum.Generator, category_name="Wind")
 ```
 
-## ⏰ Time Management
+## 🛠️ Helpers & Utilities
 
 ### Horizons
-Horizons define simulation time periods. Common step types: 1=Day, 2=Week, 3=Month, 4=Year.
+Horizons define simulation time periods.
+- Planning step types: 1=Day, 2=Week, 3=Month, 4=Year
+- Chrono step types (ST Schedule): -1=Second, 0=Minute, 1=Hour, 2=Day, 3=Week
+- Raises ObjectAlreadyExistsError if name exists — use update_horizon() to modify.
 
 ```python
 from datetime import datetime
 
 # Create monthly horizon -> returns Object (Horizon class)
 horizon: Object = sdk.create_horizon(
-    name="2024 Monthly", date_from=datetime(2024, 1, 1), step_count=12, step_type=3, description="MonthlyHorizon for 2024")
+    name="2024 Monthly", date_from=datetime(2024, 1, 1), step_count=12, step_type=3, description="Monthly horizon for 2024")
 
-# With chronological parameters (for look-ahead/behind scheduling)
+# With chronological parameters (ST Schedule configuration)
+# NOTE: chrono period must fit within planning horizon — SDK raises ValidationError if chrono end exceeds horizon end
 horizon: Object = sdk.create_horizon(
     name="2024 With Chrono",
     date_from=datetime(2024, 1, 1), step_count=12, step_type=3,
-    chrono_date_from=datetime(2023, 12, 1),  # Look-behind start
-    chrono_step_count=14,                     # Extended chrono range
-    chrono_step_type=3                        # Monthly
+    chrono_date_from=datetime(2024, 1, 1),
+    chrono_step_count=365,                    # 365 days — must not exceed horizon window
+    chrono_step_type=2                        # Day (chrono enum, not planning enum)
 )
 
 # Get a specific horizon by name -> returns Object
@@ -479,6 +541,94 @@ oa_date = to_oa_date(datetime(2024, 1, 1))
 dt = from_oa_date(44927.0)
 ```
 
+### Report Configuration
+
+> **Reporting properties need a parent class.** A reporting property is identified by
+> `(parent_class_lang_id, collection_lang_id, reporting_lang_id)`, **not** by collection +
+> reporting lang_id alone. A collection lang_id is shared by many collections that differ only
+> by parent class — e.g. `System→Generator`, `Emission→Generator` and `Reserve→Generator` all
+> have collection lang_id `36` (`CollectionEnum.Generators`). The same reporting property (e.g.
+> `Generation`) exists on several of them. Pass `parent_class_lang_id` (e.g. `ClassEnum.System`)
+> to target the one you mean. If you omit it and more than one collection matches, the SDK raises
+> `AmbiguousReportPropertyError` rather than silently picking one. You may omit it only when the
+> property is unique to a single collection.
+
+```python
+# Create a Report object first -> returns Object
+report_object: Object = sdk.add_object(class_lang_id=ClassEnum.Report, object_name="TestReport")
+
+# Configure report attributes (what types of output to generate) -> returns AttributeData
+attr1: AttributeData = sdk.add_attribute_by_lang_id(report_object, AttributeEnum_Report.OutputResultsByHour, -1)
+attr2: AttributeData = sdk.add_attribute_by_lang_id(report_object, AttributeEnum_Report.OutputResultsByDay, -1)
+attr3: AttributeData = sdk.add_attribute_by_lang_id(report_object, AttributeEnum_Report.OutputStatistics, -1)
+attr4: AttributeData = sdk.add_attribute_by_lang_id(report_object, AttributeEnum_Report.OutputResultsBySample, -1)
+
+# Add a single report configuration -> returns Report
+report_config: Report = sdk.add_report_configuration(
+    object_obj=report_object,
+    parent_class_lang_id=ClassEnum.System,           # disambiguates System->Generator
+    collection_lang_id=CollectionEnum.Generators,
+    reporting_lang_id=ReportingEnum_Generators.Generation,
+    phase_id=4,
+    report_period=True,
+    report_samples=True,
+    report_statistics=True,
+    report_summary=True,
+    write_flat_files=False,
+)
+
+# Target a non-System parent (e.g. emission produced per generator) by changing the parent class
+emission_per_gen: Report = sdk.add_report_configuration(
+    object_obj=report_object,
+    parent_class_lang_id=ClassEnum.Emission,         # Emission->Generator, not System->Generator
+    collection_lang_id=CollectionEnum.Generators,
+    reporting_lang_id=ReportingEnum_Generators.Production,
+    phase_id=4,
+    report_period=True,
+    report_samples=False,
+    report_statistics=False,
+    report_summary=True,
+    write_flat_files=False,
+)
+
+# Convenience: create report, attach to model, and configure properties in one call.
+# Each entry is (collection_lang_id, reporting_lang_id) OR
+# (parent_class_lang_id, collection_lang_id, reporting_lang_id) — use the 3-tuple to disambiguate.
+report: Object = sdk.create_report(
+    model_obj=model,
+    report_name="My Report",
+    # 3-tuple is always safe; the 2-tuple short form is allowed only when the property is
+    # unique to one collection (otherwise AmbiguousReportPropertyError is raised).
+    reporting_lang_ids=[
+        (ClassEnum.System, CollectionEnum.Generators, ReportingEnum_Generators.Generation),
+        (ClassEnum.System, CollectionEnum.Generators, ReportingEnum_Generators.GenerationCost),
+        (ClassEnum.System, CollectionEnum.Regions, ReportingEnum_Regions.Price),
+    ],
+    report_period=True,
+    report_summary=True,
+)
+
+# Batch configure reporting properties on an existing Report object -> returns List[Report]
+configs: List[Report] = sdk.configure_report_properties(
+    object_obj=report_object,
+    reporting_lang_ids=[
+        (ClassEnum.System, CollectionEnum.Generators, ReportingEnum_Generators.Generation),
+        (ClassEnum.System, CollectionEnum.Fuels, ReportingEnum_Fuels.Cost),
+    ],
+    phase_id=4,
+    report_period=True,
+    report_summary=True,
+)
+
+# Query existing report configurations -> returns List[Report]
+existing: List[Report] = sdk.get_report_configurations(
+    object_obj=report_object,
+    parent_class_lang_id=ClassEnum.System,
+    collection_lang_id=CollectionEnum.Generators,
+    reporting_lang_id=ReportingEnum_Generators.Generation,
+    phase_id=4,  # Optional filter
+)
+```
 
 ## 🚀 Quick Start Example
 
@@ -486,7 +636,7 @@ Complete workflow using core SDK functionality:
 
 ```python
 from plexos_sdk import PLEXOSSDK
-from electric_enums import ClassEnum, CollectionEnum, PropertyEnum_Generators, AttributeEnum_Generator
+from plexos_sdk.enums.system_enums import ClassEnum, CollectionEnum, PropertyEnum_Generators, AttributeEnum_Generator
 from datetime import datetime
 
 # Work with existing database
@@ -505,7 +655,7 @@ with PLEXOSSDK("my_model.db") as sdk:
         generator: Object = sdk.add_object(class_lang_id=ClassEnum.Generator, object_name="WindFarm1", category_obj=category)
 
         # 3. Add attributes (object-level settings) -> returns AttributeData
-        attr_data: AttributeData = sdk.add_attribute_by_lang_id(generator, AttributeEnum_Generator.MaxOutput, 600.0)
+        attr_data: AttributeData = sdk.add_attribute_by_lang_id(generator, AttributeEnum_Generator.Latitude, 40.7128)
 
         # 4. Add properties (membership-level settings)
         membership: Membership = sdk.get_membership_by_child_name(
@@ -518,7 +668,7 @@ with PLEXOSSDK("my_model.db") as sdk:
         capacity_prop = sdk.get_property(
             parent_class_lang_id=ClassEnum.System,
             collection_lang_id=CollectionEnum.Generators,
-            property_lang_id=PropertyEnum_Generators.Capacity
+            property_lang_id=PropertyEnum_Generators.MaxCapacity
         )
         data: Data = sdk.add_property(membership, capacity_prop, 500.0)
 
@@ -569,38 +719,44 @@ converter.xml_to_db("model.xml", "model.db")
 converter.db_to_xml("model.db", "model.xml")
 ```
 
+## ⚙️ Database Configuration
+
+```python
+# Set unit system and hydro model type
+sdk.set_base_unit_type(units="Metric", hydro_model="Energy")  # defaults
+sdk.set_base_unit_type(units="Imperial", hydro_model="Level")
+# Valid units: "Metric", "Imperial"
+# Valid hydro_model: "Auto", "Energy", "Level", "Volume"
+```
+
+## 🔍 Database Validation
+
+```python
+# Run all integrity checks — returns list of warning strings (empty = clean)
+warnings = sdk.validate()
+for w in warnings:
+    print(w)
+
+```
+
 ## 🎯 Enum Generation
 
 Enums provide type-safe identifiers for classes, collections, properties, and attributes — giving you IDE autocomplete, compile-time validation, and readable code instead of raw integer IDs.
 
-**Why generate instead of ship?** Enums are generated from **your** database because the available classes, properties, and attributes vary by PLEXOS version and domain (electric, gas, water, universal). The SDK supports all versions, so enums cannot be bundled — they must be generated to match the specific version and domain you are working with.
-
-### Python API
+**Shipped default:** The SDK ships with `system_enums.py` for the electric domain (latest version). Use it directly — no generation step needed:
 ```python
-from plexos_sdk import generate_enums_from_database
-
-# Generate enums from your database
-enums = generate_enums_from_database(
-    database_path="my_database.db",
-    domain_name="electric",
-    output_dir="my_enums/"
-)
-
-# Use generated enums
-from my_enums.electric_enums import ClassEnum, PropertyEnum_Generators
-generator = sdk.add_object(class_lang_id=ClassEnum.Generator, object_name="WindFarm1")
+from plexos_sdk.enums.system_enums import ClassEnum, CollectionEnum, PropertyEnum_Generators
 ```
 
-### CLI
-```bash
-# Generate enums with auto-detected domain
-python -m plexos_sdk.enum_generator my_database.db --output enums/
+**Regenerate for your version/domain:** If your PLEXOS version differs or you use a different domain (gas, water, universal), regenerate from your own database. The output is always `system_enums.py` so import statements stay the same.
 
-# Generate enums for specific domain
-python -m plexos_sdk.enum_generator my_database.db --domain electric --output enums/
+### From SDK (preferred — no separate step)
+```python
+from plexos_sdk.enums.system_enums import ClassEnum, PropertyEnum_Generators
 
-# Generate enums with analysis report
-python -m plexos_sdk.enum_generator my_database.db --domain gas --output enums/ --analysis
+with PLEXOSSDK("my_database.db") as sdk:
+    sdk.generate_enums()  # replaces shipped enums with your database's version
+    # Same import above now reflects your version/domain — no changes needed
 ```
 
 ## 🎯 Data Enums/Identifiers
@@ -608,8 +764,8 @@ python -m plexos_sdk.enum_generator my_database.db --domain gas --output enums/ 
 The SDK supports enums for better developer experience. Import domain-specific enums for type safety and IDE support.
 
 ```python
-# Import domain-specific enums
-from electric_enums import ClassEnum, CollectionEnum, PropertyEnum_Generators, PropertyEnum_Fuels, AttributeEnum_Generator
+# Import enums (shipped with SDK, or regenerated from your database)
+from plexos_sdk.enums.system_enums import ClassEnum, CollectionEnum, PropertyEnum_Generators, PropertyEnum_Fuels, AttributeEnum_Generator
 
 # Use enums instead of IDs -> returns models
 generator: Object = sdk.add_object(
@@ -731,44 +887,44 @@ with sdk.transaction():
     capacity_prop = sdk.get_property(
         parent_class_lang_id=ClassEnum.System,
         collection_lang_id=CollectionEnum.Generators,
-        property_lang_id=PropertyEnum_Generators.Capacity
+        property_lang_id=PropertyEnum_Generators.MaxCapacity
     )
     capacity_data: Data = sdk.add_property(membership=membership, property_obj=capacity_prop, value=500.0)
 
     # With text creation
-    availability_prop = sdk.get_property(
+    rating_factor_prop = sdk.get_property(
         parent_class_lang_id=ClassEnum.System,
         collection_lang_id=CollectionEnum.Generators,
-        property_lang_id=PropertyEnum_Generators.Availability
+        property_lang_id=PropertyEnum_Generators.RatingFactor
     )
-    availability_data: Data = sdk.add_property(
+    rating_factor_data: Data = sdk.add_property(
         membership=membership,
-        property_obj=availability_prop,
+        property_obj=rating_factor_prop,
         value=0.95,
-        data_file_text="availability_data.csv",
+        data_file_text="rating_factor.csv",
         time_slice_text="M7-12"
     )
 
     # With tags and date range
-    fuel_cost_prop = sdk.get_property(
+    fuel_price_prop = sdk.get_property(
         parent_class_lang_id=ClassEnum.System,
         collection_lang_id=CollectionEnum.Generators,
-        property_lang_id=PropertyEnum_Generators.FuelCost
+        property_lang_id=PropertyEnum_Generators.FuelPrice
     )
-    fuel_cost_data: Data = sdk.add_property(
+    fuel_price_data: Data = sdk.add_property(
         membership=membership,
-        property_obj=fuel_cost_prop,
+        property_obj=fuel_price_prop,
         value=45.0,
         data_file_tag=data_file_obj,
         date_from="2030-01-01T00:00:00"
     )
 
     # Add attributes -> returns Attribute and AttributeData
-    max_output_attr: Attribute = sdk.get_attribute(
+    latitude_attr: Attribute = sdk.get_attribute(
         class_lang_id=ClassEnum.Generator,
-        attribute_lang_id=AttributeEnum_Generator.MaxOutput
+        attribute_lang_id=AttributeEnum_Generator.Latitude
     )
-    attr_data: AttributeData = sdk.add_attribute(object_obj=wind_farm_obj, attribute=max_output_attr, value=600.0)
+    attr_data: AttributeData = sdk.add_attribute(object_obj=wind_farm_obj, attribute=latitude_attr, value=40.7128)
 ```
 
 
@@ -782,7 +938,7 @@ with sdk.transaction():
 
 Every PLEXOS database requires a foundation of **system-defined metadata** — classes, collections, properties, attributes, and their relationships. This metadata defines what object types exist (Generators, Fuels, Regions, etc.), what properties they support, and how they relate to each other.
 
-This metadata is **version-specific**. PLEXOS 11.05.112 has different metadata than 11.03.75 — new properties, renamed collections, updated validation rules. When creating a blank database, the seed data must match the PLEXOS version the user will run simulations against. Using mismatched seed data can cause upgrade/downgrade issues when the database is opened in PLEXOS Desktop.
+This metadata is **version-specific**. PLEXOS 12.03.175 has different metadata than 12.01.142 — new properties, renamed collections, updated validation rules. When creating a blank database, the seed data must match the PLEXOS version the user will run simulations against. Using mismatched seed data can cause upgrade/downgrade issues when the database is opened in PLEXOS Desktop.
 
 ### How Seed Data Is Produced
 
@@ -816,11 +972,11 @@ Place all 4 `.db` files in one folder, then package them:
 ```bash
 plexos-sdk package-sql C:\Data\seed_dbs\ seeddata/sdk_seed_data.zip
 ```
-The PLEXOS version is auto-detected from the databases (e.g., `11.05.112`). The zip supports **multiple versions** — running this again with databases from a different PLEXOS version appends a new version folder to the existing zip.
+The PLEXOS version is auto-detected from the databases (e.g., `12.03.175`). The zip supports **multiple versions** — running this again with databases from a different PLEXOS version appends a new version folder to the existing zip.
 
 ```bash
 # Override auto-detected version
-plexos-sdk package-sql C:\Data\seed_dbs\ seeddata/sdk_seed_data.zip --version 11.05.112
+plexos-sdk package-sql C:\Data\seed_dbs\ seeddata/sdk_seed_data.zip --version 12.03.175
 
 # Replace an existing version in the zip
 plexos-sdk package-sql C:\Data\seed_dbs\ seeddata/sdk_seed_data.zip --overwrite-version
@@ -829,13 +985,13 @@ plexos-sdk package-sql C:\Data\seed_dbs\ seeddata/sdk_seed_data.zip --overwrite-
 **Zip structure:**
 ```
 sdk_seed_data.zip
-├── 11.05.112/
+├── 12.03.175/
 │   ├── seed_data_electric.sql
 │   ├── seed_data_gas.sql
 │   ├── seed_data_water.sql
 │   ├── seed_data_universal.sql
 │   └── metadata.json
-├── 11.03.75/
+├── 12.01.142/
 │   ├── seed_data_electric.sql
 │   ├── ...
 │   └── metadata.json
@@ -871,7 +1027,7 @@ with SeedDataManager("source_database.db") as manager:
         "new_model.db",
         "seeddata/sdk_seed_data.zip",
         "electric",
-        "11.05.112"  # Optional — defaults to newest version in zip
+        "12.03.175"  # Optional — defaults to newest version in zip
     )
 ```
 
@@ -932,7 +1088,7 @@ The SDK performs comprehensive duplicate detection when adding properties. Two p
 - **Membership and Property**: Same membership and property
 - **Band ID**: Same band_id (default is 1)
 - **Value**: Same numeric value
-- **Texts**: Same set of Text objects (data_file_text, time_slice_text) - compared by class_id, value, and action_id
+- **Texts**: Same set of Text objects (data_file_text, time_slice_text, expression_text) - compared by class_id, value, and action_id
 - **Tags**: Same set of Tag objects (data_file_tag, scenario_tag, expression_tag) - compared by object_id and action_id
 - **Date Ranges**: Same date_from and date_to values
 
