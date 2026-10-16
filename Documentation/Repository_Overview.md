@@ -72,7 +72,7 @@ All configuration is passed as explicit CLI arguments — no platform-injected e
 | Item | Detail |
 |---|---|
 | OS | Linux (Pre/Post tasks) |
-| Python | 3.11+ |
+| Python | 3.10 (`python3`) and 3.12 (`python3.12`) available side by side — see [`Python_Version_Selection_PrePost_Tasks.md`](Python_Version_Selection_PrePost_Tasks.md) |
 | SDKs pre-installed | `eecloud` (Cloud SDK), `plexos` (PLEXOS SDK) |
 | Shared mounts | `/simulation` (study files), `/output` (artifacts, auto-uploaded) |
 

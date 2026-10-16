@@ -120,7 +120,7 @@ Automation scripts do **not** have access to these variables — they receive al
 
 - **Using the wrong phase for the job.** Input preparation belongs in pre tasks, result extraction belongs in post tasks, and DataHub-only file movement can often be done with automation scripts.
 
-- **Ignoring platform constraints.** Pre- and post-simulation tasks are supported on **Linux environments only**. Python 3.11+ is required.
+- **Ignoring platform constraints.** Pre- and post-simulation tasks are supported on **Linux environments only**. Both Python 3.10 (`python3`) and Python 3.12 (`python3.12`) are available — see [Python_Version_Selection_PrePost_Tasks.md](Python_Version_Selection_PrePost_Tasks.md) for how to choose the correct interpreter per task.
 
 - **Skipping DuckDB view setup before querying solution data.** The [Configure Duck Db Views](../Post/PLEXOS/ConfigureDuckDbViews/README.md) script must run with a low `ExecutionOrder` before any script that queries solution views.
 

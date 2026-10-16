@@ -3,7 +3,12 @@ Browse and download Datahub deep links using raw HTTP (no authentication needed)
 
 Subcommands:
     browse    List files inside a folder deep link via raw HTTP/urllib
-    download  Download one or more files from a folder deep link via raw HTTP
+    download  Download from a File or Folder deep link via raw HTTP:
+              - File deep link (`ut=file`): omit --files; the destination file name
+                is derived from the deep link URL itself.
+              - Folder deep link (`ut=folder`): pass one or more --files paths to
+                select which file(s) within the folder to download; each value is
+                also used as the local destination path.
 
 Note: To create deep links, use datahub_deep_link.py which handles authenticated creation via SDK.
 """
@@ -12,7 +17,7 @@ import json
 import os
 import re
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote
+from urllib.parse import parse_qs, quote, unquote, urlsplit
 from urllib.request import Request, urlopen
 
 import requests
@@ -107,24 +112,92 @@ class DeepLinkBrowser:
 
 
 
+def _file_name_from_download_url(url: str) -> str:
+    path = urlsplit(url).path
+    marker = "/download/"
+    index = path.find(marker)
+    if index == -1:
+        return unquote(path.rsplit("/", 1)[-1])
+    return unquote(path[index + len(marker):]).split("/")[-1]
+
+
+def _expected_total_bytes(response, resume_from: int) -> int | None:
+    """Full resource size, preferring the header that survives compression."""
+    full_length = response.headers.get("EE-FullContentLength")
+    if full_length:
+        try:
+            return int(full_length)
+        except ValueError:
+            pass
+
+    content_range = response.headers.get("Content-Range")
+    if content_range and "/" in content_range:
+        try:
+            return int(content_range.rsplit("/", 1)[-1].strip())
+        except ValueError:
+            pass
+
+    content_length = response.headers.get("Content-Length")
+    if content_length:
+        try:
+            return int(content_length) + resume_from
+        except ValueError:
+            pass
+
+    return None
+
+
 class DeepLinkBatchDownloader:
-    """Downloads files from a Datahub deep link via raw HTTP requests."""
+    """Downloads files from a Datahub deep link via raw HTTP requests.
+
+    Supports both link types, distinguished by the `ut=` query parameter already
+    present in the URL:
+    - File deep links (`ut=file`) already identify a single file; `--files` must
+      be omitted, and the destination name is derived from the URL.
+    - Folder deep links (`ut=folder`) require one or more `--files` paths to
+      select which file(s) to download; each is appended as `InternalFilePath`.
+
+    Passing `--files` for a File-type link (or omitting it for a Folder-type
+    link) is rejected up front rather than silently sent to the server, since
+    the former reproduces a signature-invalidating 401 and the latter requests
+    the folder URL without a file selector.
+    """
+
+    _CHUNK_SIZE = 1024 * 1024
+    _MAX_ATTEMPTS = 20
+    _PROGRESS_EVERY = 256 * 1024 * 1024
 
     def __init__(self, download_url: str, signature: str, output_dir: str):
         self.download_url = download_url.rstrip("&").rstrip("?")
         self.signature = signature
         self.output_dir = output_dir
+        self.link_type = (parse_qs(urlsplit(self.download_url).query).get("ut", [""])[0] or "").lower()
 
-    def download(self, file_paths: list[str]) -> bool:
+    def download(self, file_paths: list[str] | None) -> bool:
         os.makedirs(self.output_dir, exist_ok=True)
 
-        headers = {"X-DeepLink-Signature": self.signature}
+        if file_paths and self.link_type == "file":
+            print("[FAIL] This is a File-type deep link (ut=file); it already targets a single file "
+                  "and does not accept --files. Omit --files, or create a Folder-type deep link instead.")
+            return False
+        if not file_paths and self.link_type == "folder":
+            print("[FAIL] This is a Folder-type deep link (ut=folder); pass one or more --files paths "
+                  "to select which file(s) to download.")
+            return False
+
         separator = "&" if "?" in self.download_url else "?"
 
         succeeded = 0
         failed = 0
 
-        for file_path in file_paths:
+        if not file_paths:
+            # File-level deep link: the route already targets one file, so no InternalFilePath.
+            file_paths = [_file_name_from_download_url(self.download_url)]
+            urls = [self.download_url]
+        else:
+            urls = None
+
+        for index, file_path in enumerate(file_paths):
             if (_PATH_TRAVERSAL.search(file_path)
                     or file_path.startswith("/")
                     or file_path.startswith("\\")
@@ -133,32 +206,146 @@ class DeepLinkBatchDownloader:
                 failed += 1
                 continue
 
-            encoded_path = quote(file_path, safe="")
-            url = f"{self.download_url}{separator}InternalFilePath={encoded_path}"
+            if urls:
+                url = urls[index]
+            else:
+                encoded_path = quote(file_path, safe="")
+                url = f"{self.download_url}{separator}InternalFilePath={encoded_path}"
 
-            try:
-                response = requests.get(url, headers=headers, timeout=300, stream=True)
-            except requests.RequestException as e:
-                print(f"[FAIL] {file_path} - request error: {e}")
-                failed += 1
-                continue
-
-            if response.ok:
-                dest = os.path.join(self.output_dir, file_path.replace("/", os.sep))
-                os.makedirs(os.path.dirname(dest), exist_ok=True)
-                size = 0
-                with open(dest, "wb") as f:
-                    for chunk in response.iter_content(chunk_size=8192):
-                        f.write(chunk)
-                        size += len(chunk)
-                print(f"[OK] Downloaded: {file_path} ({size:,} bytes)")
+            if self._download_one(url, file_path):
                 succeeded += 1
             else:
-                print(f"[FAIL] {file_path} - HTTP {response.status_code}: {response.text}")
                 failed += 1
 
         print(f"\n[OK] {succeeded} succeeded, {failed} failed out of {len(file_paths)} file(s).")
         return failed == 0
+
+    def _download_one(self, url: str, file_path: str) -> bool:
+        dest = os.path.join(self.output_dir, file_path.replace("/", os.sep))
+        parent = os.path.dirname(dest)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        part = f"{dest}.part"
+        meta_path = f"{dest}.part.meta"
+
+        expected = None
+
+        for attempt in range(1, self._MAX_ATTEMPTS + 1):
+            resume_from = 0
+            validator = None
+            if os.path.exists(part):
+                resume_from = os.path.getsize(part)
+                if resume_from > 0:
+                    validator = self._load_validator(meta_path)
+                    if validator is None:
+                        # No trusted ETag/Last-Modified for this partial file (e.g. left
+                        # over from an earlier invocation) -- discard rather than risk
+                        # resuming into a differently-versioned object.
+                        os.remove(part)
+                        resume_from = 0
+
+            headers = {
+                "X-DeepLink-Signature": self.signature,
+                # Without this the API gzips the payload, which drops Content-Length and
+                # switches to chunked, leaving no way to tell a short body from a complete one.
+                "Accept-Encoding": "identity",
+            }
+            if resume_from > 0:
+                headers["Range"] = f"bytes={resume_from}-"
+                if validator:
+                    headers["If-Range"] = validator
+
+            try:
+                response = requests.get(url, headers=headers, timeout=(30, 300), stream=True)
+            except requests.RequestException as e:
+                print(f"[WARN] {file_path} - attempt {attempt}: request error: {e}")
+                continue
+
+            with response:
+                if not response.ok:
+                    print(f"[FAIL] {file_path} - HTTP {response.status_code}: {response.text[:500]}")
+                    return False
+
+                if resume_from > 0 and response.status_code != 206:
+                    # Range/If-Range not honoured -- either the server doesn't support partial
+                    # content or the object changed since the .part file was started. Discard
+                    # and restart from zero rather than appending onto a mismatched prefix.
+                    # `expected` must also be reset: it may hold the previous (now stale) object's
+                    # size, and checking the replacement content against that size could accept a
+                    # truncated larger replacement or exhaust retries on a smaller one.
+                    print(f"[WARN] {file_path} - attempt {attempt}: Range ignored or object changed, restarting from zero")
+                    if os.path.exists(part):
+                        os.remove(part)
+                    self._remove_validator(meta_path)
+                    expected = None
+                    continue
+
+                if resume_from == 0:
+                    self._save_validator(meta_path, response.headers)
+
+                if expected is None:
+                    expected = _expected_total_bytes(response, resume_from)
+
+                written = resume_from
+                next_report = written + self._PROGRESS_EVERY
+                try:
+                    with open(part, "ab") as f:
+                        for chunk in response.iter_content(chunk_size=self._CHUNK_SIZE):
+                            f.write(chunk)
+                            written += len(chunk)
+                            if written >= next_report:
+                                self._report(file_path, written, expected)
+                                next_report = written + self._PROGRESS_EVERY
+                except (requests.RequestException, OSError) as e:
+                    print(f"[WARN] {file_path} - attempt {attempt}: interrupted at {written:,} bytes: {e}")
+                    continue
+
+            if expected is not None and written < expected:
+                print(f"[WARN] {file_path} - attempt {attempt}: short read {written:,}/{expected:,}, resuming")
+                continue
+
+            os.replace(part, dest)
+            self._remove_validator(meta_path)
+            print(f"[OK] Downloaded: {file_path} ({written:,} bytes)")
+            return True
+
+        print(f"[FAIL] {file_path} - still incomplete after {self._MAX_ATTEMPTS} attempts; partial kept at {part}")
+        return False
+
+    @staticmethod
+    def _save_validator(meta_path: str, headers) -> None:
+        """Persist the ETag/Last-Modified of a freshly-started download for later If-Range use."""
+        validator = headers.get("ETag") or headers.get("Last-Modified")
+        if not validator:
+            DeepLinkBatchDownloader._remove_validator(meta_path)
+            return
+        try:
+            with open(meta_path, "w", encoding="utf-8") as f:
+                json.dump({"validator": validator}, f)
+        except OSError:
+            pass
+
+    @staticmethod
+    def _load_validator(meta_path: str) -> str | None:
+        try:
+            with open(meta_path, "r", encoding="utf-8") as f:
+                return json.load(f).get("validator")
+        except (OSError, ValueError):
+            return None
+
+    @staticmethod
+    def _remove_validator(meta_path: str) -> None:
+        try:
+            os.remove(meta_path)
+        except OSError:
+            pass
+
+    @staticmethod
+    def _report(file_path: str, written: int, expected: int | None) -> None:
+        if expected:
+            print(f"  {file_path}: {written:,}/{expected:,} bytes ({written * 100.0 / expected:.1f}%)")
+        else:
+            print(f"  {file_path}: {written:,} bytes")
 
 
 def main() -> int:
@@ -179,7 +366,7 @@ def main() -> int:
 
     download_parser = subparsers.add_parser(
         "download",
-        help="Download one or more files from a folder deep link",
+        help="Download from a File or Folder deep link (see module docstring for the difference)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     download_parser.add_argument("--url", required=True, help="The full deep link download URL")
@@ -187,9 +374,12 @@ def main() -> int:
     download_parser.add_argument("--output-dir", required=True, help="Local directory to save downloaded files")
     download_parser.add_argument(
         "--files",
-        required=True,
         nargs="+",
-        help="One or more internal file paths to download from the deep link folder",
+        default=None,
+        help="Internal file paths to download from a Folder deep link (each also used as the local "
+             "destination path). Required for a Folder deep link (ut=folder) and must be omitted for a "
+             "File deep link (ut=file), whose URL already targets a single file and whose destination "
+             "name is derived from the URL.",
     )
 
     args = parser.parse_args()

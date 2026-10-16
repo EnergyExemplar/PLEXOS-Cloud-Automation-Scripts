@@ -113,7 +113,7 @@ with duckdb.connect(duck_db_path) as con:
 
 ### Python Version
 
-**Python 3.11 or higher** is required. This matches the version used in cloud execution environments and ensures compatibility with the CLI SDK and all automation features.
+Pre/Post simulation containers provide **Python 3.10** (`python3`) and **Python 3.12** (`python3.12`) side by side — see [`Python_Version_Selection_PrePost_Tasks.md`](Documentation/Python_Version_Selection_PrePost_Tasks.md) for how to choose between them. For local development of Automation scripts against the CLI SDK, **Python 3.11 or higher** is required (see `requirements.txt`).
 
 ### Dependencies
 
@@ -134,7 +134,7 @@ The following SDKs are **pre-installed** in the cloud execution environment:
 
 #### Local Installation
 
-For local testing, both SDKs are available through your CLI installation:
+For local testing on your own machine (a single Python installation, not the Pre/Post multi-interpreter container), both SDKs are available through your CLI installation:
 
 1. **Install the CLI** from the `Energy Exemplar Web / Marketplace` (available in all environments)
 2. **Locate the wheel files** in your CLI installation directory:
@@ -164,17 +164,17 @@ If you need to use a custom Python package (not available on PyPI):
    python setup.py bdist_wheel
    ```
 2. **Upload the wheel file** along with your scripts
-3. **Reference it in your simulation task**:
+3. **Install and run in the same task** — each Pre/Post task runs in its own isolated container, so a package installed by one task is not visible to a later task. Install and execute with the same interpreter in a single task's `Arguments`, for example for a `python3.12` task:
    ```json
    {
-     "Name": "Install custom package",
+     "Name": "Install custom package and run script",
      "TaskType": "Pre",
-     "Arguments": "pip install /simulation/custom_package-1.0.0-py3-none-any.whl",
+     "Arguments": "bash -c 'python3.12 -m pip install /simulation/custom_package-1.0.0-py3-none-any.whl && python3.12 my_script.py'",
      "ExecutionOrder": 1
    }
    ```
 
-> **Note:** Custom packages are the user's responsibility. Ensure compatibility with Python 3.11+ and test thoroughly.
+> **Note:** Custom packages are the user's responsibility. Install with the same interpreter (`python3 -m pip` for Python 3.10, `python3.12 -m pip` for Python 3.12) as the script that imports the package, in the same task, and test thoroughly.
 
 ---
 

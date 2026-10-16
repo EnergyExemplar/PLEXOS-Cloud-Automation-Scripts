@@ -63,7 +63,7 @@ All dependencies are declared in the repository root `requirements.txt`.
 eecloud
 ```
 
-- Python 3.11+
+- Python 3.10
 - Cloud CLI installed and accessible at the path given by `cloud_cli_path`
 
 ---
@@ -102,8 +102,8 @@ eecloud
 
 ## Example Commands
 
-```
-python datahub_solparquet_uploader.py -r 'BaseModel'
+```bash
+python3 datahub_solparquet_uploader.py -r 'BaseModel'
 ```
 
 > The model ID from the mapping and a timestamp are appended automatically.

@@ -112,7 +112,7 @@ Include a "Related Scripts" section showing:
 
 ## Prerequisites
 
-- Python 3.11+
+- Python 3.11+ (see `requirements.txt`)
 - PLEXOS Cloud CLI installed
 - Valid environment credentials
 - Dependencies: `pip install -r requirements.txt`

@@ -39,7 +39,7 @@ This example builds a realistic multi-node energy system:
 | Companies | 100 | Ownership on first 50 generators |
 | Lines | 15 | Ring + cross-links |
 
-**SDK features covered:** `SQLDatabaseCreator`, `add_category`, `add_object`, `get_property`, `add_property`, `get_collection`, `add_membership`, `transaction`, `add_attribute_by_lang_id`, `add_report_configuration`, `create_report`, `get_report_configurations`, `create_horizon`, `list_all_horizons`, `get_horizon_by_name`, `bulk_add_property`, `bulk_update_property`, `bulk_delete_property`, `get_property_data`, `get_property_data_all`, `get_membership_by_child_name`, `add_memo_data`, `get_memo_data`, `get_objects`, `XmlConverter.db_to_xml`, `PLEXOSSDK.from_xml`, `sdk.validate`.
+**SDK features covered:** `SQLDatabaseCreator`, `add_category`, `add_object`, `get_property`, `add_property`, `get_collection`, `add_membership`, `transaction`, `add_attribute_by_lang_id`, `add_report_configuration`, `create_report`, `get_report_configurations`, `get_object_by_name`, `create_horizon`, `get_child_memberships`, `remove_membership`, `list_all_horizons`, `get_horizon_by_name`, `bulk_add_property`, `bulk_update_property`, `bulk_delete_property`, `get_property_data`, `resolve_property_data`, `get_property_data_all`, `get_membership_by_child_name`, `add_memo_data`, `get_memo_data`, `get_objects`, `XmlConverter.db_to_xml`, `PLEXOSSDK.from_xml`, `sdk.validate`.
 
 ---
 
@@ -133,37 +133,40 @@ with PLEXOSSDK(DB_PATH) as sdk:
             class_lang_id=ClassEnum.Battery,
         )
 
+        # Remaining categories, keyed by class for use in later sections
+        categories = {}
+
         # Company categories (2)
         for i in range(2):
-            sdk.add_category(
+            categories.setdefault(ClassEnum.Company, []).append(sdk.add_category(
                 category_name=f"TestCompanyCat_{i + 1}",
                 description=f"Test company category {i + 1}",
                 class_lang_id=ClassEnum.Company,
-            )
+            ))
 
         # Node categories (2)
         for i in range(2):
-            sdk.add_category(
+            categories.setdefault(ClassEnum.Node, []).append(sdk.add_category(
                 category_name=f"TestNodeCat_{i + 1}",
                 description=f"Test node category {i + 1}",
                 class_lang_id=ClassEnum.Node,
-            )
+            ))
 
         # Fuel categories (3)
         for i in range(3):
-            sdk.add_category(
+            categories.setdefault(ClassEnum.Fuel, []).append(sdk.add_category(
                 category_name=f"TestFuelCat_{i + 1}",
                 description=f"Test fuel category {i + 1}",
                 class_lang_id=ClassEnum.Fuel,
-            )
+            ))
 
         # Region categories (2)
         for i in range(2):
-            sdk.add_category(
+            categories.setdefault(ClassEnum.Region, []).append(sdk.add_category(
                 category_name=f"TestRegionCat_{i + 1}",
                 description=f"Test region category {i + 1}",
                 class_lang_id=ClassEnum.Region,
-            )
+            ))
 ```
 
 ---
@@ -220,15 +223,15 @@ with PLEXOSSDK(DB_PATH) as sdk:
         sdk.add_property(membership, fuel_price_prop, 4.5)    # $4.50/GJ
 ```
 
-**Scaling to 100 generators** — loop with category-based parameters (continues inside the same `with sdk.transaction()` block):
+**Scaling to 100 generators** — loop with category-based parameters (continues inside the same `with sdk.transaction()` block; `TestGen_001` already exists, so the loop starts at `TestGen_002`):
 
 ```python
     # ... inside with PLEXOSSDK(DB_PATH) as sdk / with sdk.transaction(): ...
 
     generator_categories = [gen_cat_1, gen_cat_2, gen_cat_3, gen_cat_4, gen_cat_5]
-    generators = []
+    generators = [gen]  # TestGen_001 from above
 
-    for i in range(100):
+    for i in range(1, 100):
         category = generator_categories[i % 5]
         gen = sdk.add_object(
             class_lang_id=ClassEnum.Generator,
@@ -329,12 +332,12 @@ with PLEXOSSDK(DB_PATH) as sdk:
 
 ## Companies, Nodes, Fuels
 
-Simple objects — companies and nodes have no required properties. Fuels get a `Price`. This example assumes `categories` was built earlier (see [Categories](#categories)); alternatively, pass `category_obj=None` to skip:
+Simple objects — companies and nodes have no required properties. Fuels get a `Price`. Uses the `categories` dict built in [Categories](#categories); alternatively, pass `category_obj=None` to skip:
 
 ```python
 with PLEXOSSDK(DB_PATH) as sdk:
     with sdk.transaction():
-        # Assume categories dict was built in the Categories section above
+        # categories dict was built in the Categories section above
         company_categories = categories.get(ClassEnum.Company, [None])
         companies = []
         for i in range(100):
@@ -537,7 +540,10 @@ with PLEXOSSDK(DB_PATH) as sdk:
         sdk.add_attribute_by_lang_id(report, AttributeEnum_Report.OutputStatistics, -1)
         sdk.add_attribute_by_lang_id(report, AttributeEnum_Report.OutputResultsBySample, -1)
 
-        # Add reporting configurations
+        # Add reporting configurations.
+        # A collection lang_id is shared across parent classes (System→Generator,
+        # Emission→Generator, ...), so pass parent_class_lang_id — omitting it raises
+        # AmbiguousReportPropertyError when the property exists on more than one.
         reporting_items = [
             (CollectionEnum.Generators, ReportingEnum_Generators.Generation),
             (CollectionEnum.Generators, ReportingEnum_Generators.GenerationCost),
@@ -550,6 +556,7 @@ with PLEXOSSDK(DB_PATH) as sdk:
         for coll_id, report_id in reporting_items:
             sdk.add_report_configuration(
                 object_obj=report,
+                parent_class_lang_id=ClassEnum.System,
                 collection_lang_id=coll_id,
                 reporting_lang_id=report_id,
                 phase_id=4,
@@ -563,19 +570,24 @@ with PLEXOSSDK(DB_PATH) as sdk:
 
 ### One-Call `create_report` Convenience Method
 
-Creates a Report, attaches it to a Model, and adds reporting configs in a single call:
+Creates a Report, attaches it to a Model, and adds reporting configs in a single call. Each entry is a 3-tuple `(parent_class_lang_id, collection_lang_id, reporting_lang_id)`; the 2-tuple short form `(collection_lang_id, reporting_lang_id)` works only when the property is unique to one collection:
 
 ```python
 with PLEXOSSDK(DB_PATH) as sdk:
     with sdk.transaction():
         model = sdk.add_object(ClassEnum.Model, "DemoModel")
+
+        # A Model needs exactly one Horizon — validate() flags engine error 3003 otherwise
+        horizon_coll = sdk.get_collection(ClassEnum.Model, CollectionEnum.Horizon)
+        sdk.add_membership(collection=horizon_coll, parent=model, child=sdk.get_horizon_by_name("2020"))
+
         report = sdk.create_report(
             model_obj=model,
             report_name="QuickReport",
             reporting_lang_ids=[
-                (CollectionEnum.Generators, ReportingEnum_Generators.Generation),
-                (CollectionEnum.Generators, ReportingEnum_Generators.GenerationCost),
-                (CollectionEnum.Batteries,  ReportingEnum_Batteries.Load),
+                (ClassEnum.System, CollectionEnum.Generators, ReportingEnum_Generators.Generation),
+                (ClassEnum.System, CollectionEnum.Generators, ReportingEnum_Generators.GenerationCost),
+                (ClassEnum.System, CollectionEnum.Batteries,  ReportingEnum_Batteries.Load),
             ],
             report_period=True,
             report_summary=True,
@@ -586,6 +598,7 @@ with PLEXOSSDK(DB_PATH) as sdk:
             report,
             CollectionEnum.Generators,
             ReportingEnum_Generators.Generation,
+            parent_class_lang_id=ClassEnum.System,
         )
         # configs -> list of ReportConfig objects
 ```
@@ -742,7 +755,8 @@ with PLEXOSSDK(DB_PATH) as sdk:
         bands = [b.band_id for b in d.bands] if d.bands else []
         print(f"value={d.value}, bands={bands}, tags={tags}")
 
-    # Retrieve a specific row by filter
+    # Retrieve a specific row by filter — raises AmbiguousPropertyDataError if
+    # more than one row matches the filters given
     specific = sdk.get_property_data(gen1_mem, capacity_prop, scenario_tag=scenario)
     # specific.value == 750.0
 
@@ -752,7 +766,9 @@ with PLEXOSSDK(DB_PATH) as sdk:
         memo = sdk.get_memo_data(specific)
         # memo.value == "Override for summer peak demand analysis"
 
-        base = sdk.get_property_data(gen1_mem, capacity_prop)
+        # Base row: get_property_data with no filters would match all 3 rows and raise.
+        # resolve_property_data uses the strict key — band 1, omitted tags/dates mean "none".
+        base = sdk.resolve_property_data(gen1_mem, capacity_prop)
         sdk.add_memo_data(base, "Based on 2024 nameplate rating from NERC GADS")
 
         # Memo on a different generator — flag for review
@@ -832,7 +848,10 @@ os.remove(roundtrip_db)
 
 ## Validation
 
-The SDK prevents most invalid state at creation time. Use `validate()` as a diagnostic audit for databases built by external tools or modified outside the SDK:
+The SDK prevents most invalid state at creation time. `validate()` returns a list of warning strings, each with repair guidance; an empty list means all checks pass. It covers two families:
+
+- **Layer 1 — database integrity:** schema, referential integrity, duplicate UIDs, band bounds. Most useful for databases built by external tools or modified outside the SDK.
+- **Layer 2 — engine runnability:** static pre-checks that reproduce PLEXOS engine compile-time errors, e.g. a Generator/Battery with no Node (error 3004) or a Model with no Horizon (error 3003). Run before every simulation, including on SDK-built models.
 
 ```python
 with PLEXOSSDK(DB_PATH) as sdk:

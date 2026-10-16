@@ -9,7 +9,7 @@ We are committed to maintaining a professional and technical repository that pri
 ### Recommended Practices
 
 - Follow all Python script standards and coding conventions defined in the platform-specific guides ([PLEXOS](PLEXOSReadme.md), [Aurora](AuroraReadme.md))
-- Use Python 3.11 or higher (required for CLI SDK compatibility)
+- For local Automation scripts that use the CLI SDK, use Python 3.11 or higher (see `requirements.txt`).
 - Use `argparse` for all script inputs with explicit validation
 - Organise scripts using the folder structure defined in the platform guides
 - Include clear logging and error handling in all automation scripts
@@ -26,7 +26,7 @@ We are committed to maintaining a professional and technical repository that pri
 ### Non-Compliant Practices
 
 - Submitting code that does not follow the Python script standards or naming conventions
-- Not using Python 3.11 or higher
+- Local Automation scripts not using Python 3.11 or higher
 - Hardcoding secrets, credentials, or sensitive configuration data
 - Creating scripts without proper documentation or error handling
 - Deviating from the required folder structure
@@ -81,7 +81,7 @@ Maintainers reserve the right to reject contributions that do not comply with th
 
 All contributors must adhere to:
 
-- **Python Version**: Use Python 3.11 or higher (required for CLI SDK compatibility)
+- **Python Version**: For local Automation scripts that use the CLI SDK, use Python 3.11 or higher (see `requirements.txt`).
 - **Script Standards**: Use `argparse` for inputs, validate all arguments, avoid hardcoding
 - **Repository Structure**: Follow the platform folder structure; one folder = one script
 - **Documentation**: Provide a `README.md` per script with purpose, arguments, environment variables used, related scripts, and usage examples

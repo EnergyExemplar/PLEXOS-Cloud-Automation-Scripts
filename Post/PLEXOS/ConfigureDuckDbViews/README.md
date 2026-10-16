@@ -64,7 +64,7 @@ All dependencies are declared in the repository root `requirements.txt`.
 duckdb
 ```
 
-- Python 3.11+
+- Python 3.10
 
 ---
 

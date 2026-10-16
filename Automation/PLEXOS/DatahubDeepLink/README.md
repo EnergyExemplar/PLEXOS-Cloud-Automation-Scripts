@@ -29,7 +29,11 @@ This folder contains **two scripts** (intentional deviation from one-script-per-
 
 **`deep_link_http_download.py`** — Raw HTTP browse and download (no SDK, CLI-agnostic):
 - **browse** — List files inside a folder deep link using raw HTTP (`urllib`) with `X-DeepLink-Signature` header
-- **download** — Download multiple files from a folder deep link in a single invocation via `requests`
+- **download** — Download from a File or Folder deep link via `requests`:
+  - File deep link (`ut=file`): omit `--files`; the destination file name is derived from the deep link URL itself.
+  - Folder deep link (`ut=folder`): pass one or more `--files` paths to select which file(s) to download; each value is also used as the local destination path.
+  - Passing `--files` for a File link (or omitting it for a Folder link) is rejected up front with a clear error.
+- Resumable and retrying: interrupted downloads resume from a `.part` file using an HTTP `Range` request (validated against the object's `ETag`/`Last-Modified` via `If-Range`), and transient failures or short reads are retried up to 20 times.
 - URL-encodes file paths automatically (handles spaces and special characters)
 - Reports per-file success/failure with summary counts
 - Proper error exit codes for CI/CD integration
@@ -115,7 +119,7 @@ No authentication needed — uses the pre-signed URL and signature over raw HTTP
 | `--url` | Yes | The full deep link download URL (from `create` output) |
 | `--signature` | Yes | The `X-DeepLink-Signature` value (shown once at creation) |
 | `--output-dir` | Yes | Local directory to save downloaded files (created if it doesn't exist) |
-| `--files` | Yes | One or more internal file paths within the deep link folder |
+| `--files` | Conditional | One or more internal file paths within the deep link folder. **Required** for a Folder deep link (`ut=folder`); **must be omitted** for a File deep link (`ut=file`) |
 
 ---
 
@@ -234,6 +238,17 @@ python deep_link_http_download.py download \
     --output-dir ./downloads \
     --files "SOLUTION_DATA/result.parquet"
 ```
+
+### Download a File-type deep link (no `--files`)
+
+```bash
+python deep_link_http_download.py download \
+    --url "https://datahub-api-eeprod-na.energyexemplar.com/1.0/deeplink/7bf46df1-.../download/Common%20Data.xlsx?kst=...&ut=file&..." \
+    --signature "ERNWBu75X09DvYqs2LoJPzQEE7OMSs7o5BIP3BEwp8k=" \
+    --output-dir ./downloads
+```
+
+The destination file name (`Common Data.xlsx`) is derived from the URL itself. Passing `--files` here would be rejected, since the URL already identifies a single file.
 
 ### Download multiple files in one invocation
 

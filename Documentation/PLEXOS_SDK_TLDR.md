@@ -1,12 +1,13 @@
-# PLEXOS SDK 1.0.179+
+<!--ALWAYS refer to PLEXOS_SDK_CodeGen.md (the source of truth for method signatures) to ensure examples are accurate and show correct parameters. SDK_Methods.md is auto-generated from it by sync_sdk_docs.py — do not edit SDK_Methods.md directly. STOP and ask if you have a question-->
+# PLEXOS SDK - 1.0.233+
 
 ## 📋 Table of Contents
-- [PLEXOS SDK 1.0.179+](#plexos-sdk-10179)
+- [PLEXOS SDK - 1.0.233+](#plexos-sdk---10233)
   - [📋 Table of Contents](#-table-of-contents)
   - [🚀 Installation \& Setup](#-installation--setup)
   - [🔄 Transactions](#-transactions)
       - [Manual Transaction Control](#manual-transaction-control)
-  - [🏗️ Hydrated Models](#%EF%B8%8F-hydrated-models)
+  - [🏗️ Hydrated Models](#️-hydrated-models)
   - [🔧 Basic Usage](#-basic-usage)
   - [📋 Core Operations](#-core-operations)
     - [Objects](#objects)
@@ -22,19 +23,23 @@
       - [Membership Memos](#membership-memos)
       - [Object Memos (Custom Columns)](#object-memos-custom-columns)
     - [Categories](#categories)
-  - [🛠️ Helpers \& Utilities](#%EF%B8%8F-helpers--utilities)
+  - [🛠️ Helpers \& Utilities](#️-helpers--utilities)
     - [Horizons](#horizons)
     - [Date Utilities](#date-utilities)
     - [Report Configuration](#report-configuration)
   - [🚀 Quick Start Example](#-quick-start-example)
-  - [🗄️ Database Management](#%EF%B8%8F-database-management)
+  - [🗄️ Database Management](#️-database-management)
     - [XML Conversion](#xml-conversion)
-  - [⚙️ Database Configuration](#%EF%B8%8F-database-configuration)
+    - [Externalize Time Series (BETA)](#externalize-time-series-beta)
+  - [⚙️ Database Configuration](#️-database-configuration)
   - [🔍 Database Validation](#-database-validation)
+    - [Property \& Attribute Value Rules](#property--attribute-value-rules)
   - [🎯 Enum Generation](#-enum-generation)
     - [From SDK (preferred — no separate step)](#from-sdk-preferred--no-separate-step)
   - [🎯 Data Enums/Identifiers](#-data-enumsidentifiers)
   - [🔍 Query Methods](#-query-methods)
+    - [Query API](#query-api)
+    - [Query from the Command Line](#query-from-the-command-line)
   - [🔧 Error Handling](#-error-handling)
   - [📚 Common Patterns](#-common-patterns)
   - [🌱 Seed Data Management](#-seed-data-management)
@@ -43,7 +48,7 @@
       - [Step-by-Step: Building a Seed Data Package](#step-by-step-building-a-seed-data-package)
     - [Creating Databases from Seed Data](#creating-databases-from-seed-data)
     - [Additional CLI Commands](#additional-cli-commands)
-  - [⚠️ Important Notes](#%EF%B8%8F-important-notes)
+  - [⚠️ Important Notes](#️-important-notes)
     - [Automatic System Relationships](#automatic-system-relationships)
     - [Property Duplicate Detection](#property-duplicate-detection)
     - [Data Integrity](#data-integrity)
@@ -88,8 +93,8 @@ with sdk.transaction():
     if some_validation_fails:
         sdk.rollback()  # Discard all changes — database unchanged
 
-# Check if currently inside a transaction
-if sdk.in_transaction():
+# Check if currently inside a transaction (property, not a method)
+if sdk.in_transaction:
     print("Inside a transaction")
 ```
 
@@ -129,6 +134,8 @@ from plexos_sdk.enums.system_enums import * # access to ENUMS
 # Or regenerate from your own database (replaces shipped file, no import change):
 # sdk.generate_enums()
 
+# ensure_indexes=False if opening must not write to the file:
+#   with PLEXOSSDK("readonly.db", ensure_indexes=False) as sdk:
 with PLEXOSSDK("my_model.db") as sdk:
     try:
         with sdk.transaction():
@@ -267,12 +274,19 @@ generator: Object = sdk.add_object(class_lang_id=ClassEnum.Generator, object_nam
 membership: Membership = sdk.add_membership(collection=collection_obj, parent=parent_obj, child=child_obj)
 
 # Remove membership -> returns bool
-success: bool = sdk.remove_membership_by_lang_id(parent_class_lang_id=ClassEnum.Fuel, collection_lang_id=CollectionEnum.Fuels, parent_name="ParentName", child_name="ChildName")
+# parent_class_lang_id is the collection's PARENT class: Fuels is Generator -> Fuel, so pass ClassEnum.Generator.
+# Each name is resolved inside the collection's own class, so a Generator and a Fuel may share a name safely.
+# ObjectNotFoundError (naming the class searched) if either name is absent from its class; False if the two
+# objects simply have no membership in that collection.
+success: bool = sdk.remove_membership_by_lang_id(parent_class_lang_id=ClassEnum.Generator, collection_lang_id=CollectionEnum.Fuels, parent_name="Generator1", child_name="Gas")
 
-# Get memberships -> returns model lists
-parents: List[Object] = sdk.get_parent_members(parent_class_lang_id=ClassEnum.Fuel, collection_lang_id=CollectionEnum.Fuels, child_name="ChildName")
-children: List[Object] = sdk.get_child_members(parent_class_lang_id=ClassEnum.Fuel, collection_lang_id=CollectionEnum.Fuels, parent_name="ParentName")
-memberships: List[Membership] = sdk.get_child_memberships(parent_class_lang_id=ClassEnum.Fuel, collection_lang_id=CollectionEnum.Fuels, parent_name="ParentName")
+# Get memberships -> returns model lists (empty when the name is absent from the collection's class)
+parents: List[Object] = sdk.get_parent_members(parent_class_lang_id=ClassEnum.Generator, collection_lang_id=CollectionEnum.Fuels, child_name="Gas")
+children: List[Object] = sdk.get_child_members(parent_class_lang_id=ClassEnum.Generator, collection_lang_id=CollectionEnum.Fuels, parent_name="Generator1")
+memberships: List[Membership] = sdk.get_child_memberships(parent_class_lang_id=ClassEnum.Generator, collection_lang_id=CollectionEnum.Fuels, parent_name="Generator1")
+
+# Exact (parent, child, collection) triple -> Membership or None (takes Objects, not names)
+membership: Membership | None = sdk.get_membership(parent_object=parent_obj, child_object=child_obj, collection_lang_id=CollectionEnum.Nodes)
 
 # Bulk insert memberships (high-performance bulk INSERT)
 from plexos_sdk import MembershipEntry
@@ -297,6 +311,9 @@ property_obj = sdk.get_property(
 
 # Basic property
 data: Data = sdk.add_property(membership=membership,property_obj=property_obj, value=500.0)
+
+# Same-graph collision: "error" (default) raises | "ignore" no-op | "update" upsert
+data: Data = sdk.add_property(membership=membership, property_obj=property_obj, value=500.0, if_exists="update")
 
 # With date range
 data: Data = sdk.add_property(
@@ -363,19 +380,30 @@ data: Data = sdk.add_property(
 )
 
 # Other property operations
+# get_property_value takes the same strict key as update_property, so this reads the BASE value;
+# name an artifact (band_id, time_slice_text, scenario_tag, ...) to read another row.
 value: float = sdk.get_property_value(membership=membership, property_obj=property_obj)
-# update_property targets ONE row deterministically by (membership, property, band, scenario, dates).
-# scenario_tag omitted/None => the base (untagged) row. A miss raises PropertyDataNotFoundError
-# (pass create_if_missing=True to create it); >1 match raises AmbiguousPropertyDataError.
+# update_property / remove_property target ONE row: band + texts + tags + action + dates,
+# add_property's artifact args. Omitted artifact = the row must carry none of that kind
+# (no scenario_tag => the base row). Miss raises PropertyDataNotFoundError
+# (create_if_missing=True to create it); >1 match raises AmbiguousPropertyDataError.
 updated_data: Data = sdk.update_property(membership=membership, property_obj=property_obj, value=new_value)
 scenario_row: Data = sdk.update_property(membership, property_obj, new_value, scenario_tag=scenario_obj)  # a scenario override
+slice_row: Data = sdk.update_property(membership, property_obj, new_value, time_slice_text="M1-6")  # one timeslice row of several
 success: bool = sdk.remove_property(membership=membership, property_obj=property_obj)
+sliced: bool = sdk.remove_property(membership, property_obj, time_slice_text="M1-6")
 
 # Retrieve all Data rows for a membership+property (full property graph)
 all_data: List[Data] = sdk.get_property_data_all(membership=membership, property_obj=property_obj)
 
-# Retrieve a specific Data row by filter (e.g., by scenario)
+# Retrieve a Data row by filter (e.g., by scenario). Filters, not a key: omitted = unconstrained.
+# >1 match raises AmbiguousPropertyDataError — it does not pick one.
 data: Data = sdk.get_property_data(membership=membership, property_obj=property_obj, scenario_tag=scenario_obj)
+
+# Address ONE row on the read side — same strict key as update_property. The only way to name
+# the base row of a property that also carries timeslice rows.
+base: Data = sdk.resolve_property_data(membership, property_obj)
+slice_read: Data = sdk.resolve_property_data(membership, property_obj, time_slice_text="M1-6")
 
 # Bulk operations — add/update/delete across all memberships in a collection for a scenario
 capacity = sdk.get_property(ClassEnum.System, CollectionEnum.Generators, PropertyEnum_Generators.MaxCapacity)
@@ -510,12 +538,22 @@ horizon: Object = sdk.create_horizon(
 
 # With chronological parameters (ST Schedule configuration)
 # NOTE: chrono period must fit within planning horizon — SDK raises ValidationError if chrono end exceeds horizon end
+# chrono_step_count = NUMBER of steps; chrono_at_a_time = SIZE of each step. Chrono window = count x at_a_time x unit.
 horizon: Object = sdk.create_horizon(
     name="2024 With Chrono",
     date_from=datetime(2024, 1, 1), step_count=12, step_type=3,
     chrono_date_from=datetime(2024, 1, 1),
-    chrono_step_count=365,                    # 365 days — must not exceed horizon window
-    chrono_step_type=2                        # Day (chrono enum, not planning enum)
+    chrono_step_count=365,                    # 365 steps — window (count x at_a_time) must not exceed horizon
+    chrono_step_type=2,                       # Day (chrono enum, not planning enum)
+    chrono_at_a_time=1                        # each step is 1 day (omit -> PLEXOS default of 1)
+)
+
+# Sub-interval step size: "1 step of 5 minutes" -> at_a_time carries the size, count stays 1
+horizon5min: Object = sdk.create_horizon(
+    name="5-min step", date_from=datetime(2024, 1, 1), step_count=1, step_type=1,
+    chrono_step_type=0,                       # Minute
+    chrono_at_a_time=5,                       # 5-minute step size (Total Chrono Step: 5 Minute)
+    chrono_step_count=1                       # a single step
 )
 
 # Get a specific horizon by name -> returns Object
@@ -719,6 +757,45 @@ converter.xml_to_db("model.xml", "model.db")
 converter.db_to_xml("model.db", "model.xml")
 ```
 
+### Externalize Time Series (BETA)
+
+Shrink a model by moving inline **date-varying** property data out of `t_data`/`t_date_from`/`t_date_to`
+into external CSV **Data Files** (one per `class.property`), repointing each property to a Data File
+object. Lossless and verified: for each group a CSV forward-fill must reproduce the inline effective
+value before any row is deleted; groups that don't verify (or carry tags/bands/intra-day/duplicate
+bindings) are **skipped and reported**, not partially migrated.
+
+> ⚠️ **BETA — always run on a COPY.** Verification is per group (skips, not all-or-nothing); the run is
+> transactional, so a runtime error or a new `validate()` warning rolls the whole operation back.
+> Cannot run inside an open `transaction()`. See `docs/adr/0001-externalize-time-series.md`.
+
+```python
+import shutil
+from plexos_sdk import PLEXOSSDK, ExternalizeError
+
+shutil.copy("model.db", "model_copy.db")  # ALWAYS operate on a copy
+
+with PLEXOSSDK("model_copy.db") as sdk:
+    # Preview first (read-only): what would be externalized, nothing written or deleted
+    preview = sdk.externalize_time_series(dry_run=True)
+    print(preview.groups_externalized, "group(s) migratable;", len(preview.groups_skipped), "skipped")
+
+    try:
+        report = sdk.externalize_time_series(
+            out_dir="model_copy_datafiles",  # default: "<db_stem>_datafiles/"; CSVs must ship with the .db
+            vacuum=True,                     # reclaim freed space after commit (off by default)
+        )
+    except ExternalizeError as e:
+        print("externalize rolled back:", e)  # nested tx, new validate warning, or target collision
+    else:
+        print(f"externalized {report.groups_externalized} group(s), removed {report.rows_removed} rows")
+        print("CSV Data Files:", report.csv_files)
+        for key, reason in report.groups_skipped:
+            print("skipped", key, "-", reason)
+
+# Then export XML if needed: XmlConverter().db_to_xml("model_copy.db", "model_copy.xml")
+```
+
 ## ⚙️ Database Configuration
 
 ```python
@@ -732,11 +809,27 @@ sdk.set_base_unit_type(units="Imperial", hydro_model="Level")
 ## 🔍 Database Validation
 
 ```python
-# Run all integrity checks — returns list of warning strings (empty = clean)
+# Run all checks — Layer-1 DB integrity + Layer-2 engine-runnability — returns warning strings (empty = clean)
+# Includes required memberships (e.g. Generator.Nodes, Node.Region): sdk.query.collections(required_only=True)
 warnings = sdk.validate()
 for w in warnings:
     print(w)
 
+```
+
+### Property & Attribute Value Rules
+
+Properties and attributes may carry a `validation_rule` from the PLEXOS catalog. The SDK enforces it on `add_property`, `add_attribute` and `update_attribute` — a violating value raises `ValidationError` at build time rather than failing later in the PLEXOS engine.
+
+```python
+# Rule forms (keywords are case-insensitive): "Between X And Y" (inclusive),
+# "In (X,Y,Z)", ">=X", ">X", "<=X", "<X". A rule that can't be parsed blocks the write.
+print(property_obj.validation_rule)  # e.g. 'Between 0 and 100'
+
+# Pre-check a value without writing it -> returns ValidationResult
+result = sdk.validate_value_by_rule(50.0, "Between 0 And 100")
+if not result.is_valid:
+    print(result.error_message)
 ```
 
 ## 🎯 Enum Generation
@@ -798,6 +891,64 @@ collection: Collection = sdk.get_collection(parent_class_lang_id=ClassEnum.Syste
 ```
 
 
+### Query API
+
+`sdk.query` reads by name and returns dict rows. Read-only; runs inside any open transaction, so a read after a write sees the write.
+
+```python
+from plexos_sdk.query import BASE
+
+q = sdk.query
+
+# What is set on an object -> one row per property
+print(q.properties(objects=["Generator:GT-1"], rollup=True))
+
+# One property across a class, base values only (no scenario overrides)
+q.properties(classes="Generator", properties="Max Capacity", scenarios=[BASE])
+
+# Too many rows -> describe the match first, then narrow
+print(q.properties(classes="Generator", summary=True).digest)
+
+# File-backed values -> 'value' is a placeholder; read the file behind it
+q.properties(classes="Generator", sourced="datafile")
+q.timeseries(objects=["Generator:GT-1"], properties="Rating Factor")
+
+# What can be set, with legal values
+q.catalog_properties(classes="Generator", property_like="%heat rate%")
+
+# Enums for SDK code -> get_property(class_enum, collection_enum, <enum_class>.<enum>)
+q.catalog_properties(collections="System:Generators", property_like="%heat rate%", enums=True)
+q.catalog_attributes(classes="Horizon", attributes="Chrono Step Type")
+
+# Where an ambiguous name lives
+q.resolve("Units", kind="property")
+```
+
+- Address objects as `"Class:Name"`. A bare name raises `AmbiguousNameError` when two classes share it.
+- Check `value_source` before using `value`: `"datafile"` means the number is a placeholder.
+- Read `result.notes`: withheld rows, placeholders and missing files are reported there.
+- `print(result)` is the compact form; send that, not `result.rows`. A key missing from a row is null.
+- Signatures and row fields: Query API section of `PLEXOS_SDK_CodeGen.md`.
+
+### Query from the Command Line
+
+Every Query API method is a `plexos-sdk query` subcommand; its parameters are the flags.
+
+```bash
+plexos-sdk query                                                     # every method and its flags
+plexos-sdk query classes model.db                                    # start here
+plexos-sdk query properties model.db --objects "Generator:GT-1" --rollup
+plexos-sdk query properties model.db --classes Generator --summary   # too broad: describe, then narrow
+plexos-sdk query collections model.db --parent-classes Generator --required-only
+plexos-sdk query catalog_properties model.db --collections System:Generators --property-like "%heat%" --enums
+plexos-sdk query resolve model.db Units --kind property
+plexos-sdk query properties --help                                   # one method's flags
+```
+
+- Output is the compact JSON `print(result)` gives. `--format table` to read, `--format rows` for full rows,
+  `--format columns` for code that parses many rows.
+- Exit code 3: name not found or ambiguous; the message lists the candidates.
+- Every command and flag rule: CLI section of `PLEXOS_SDK_CodeGen.md`.
 
 ## 🔧 Error Handling
 
@@ -1003,8 +1154,9 @@ sdk_seed_data.zip
 Once the seed data package exists, users can create new blank databases:
 
 ```bash
-# Create a blank database (schema only, no seed data)
-plexos-sdk create-db my_database.db
+# Create a database from the seed zip (electric, newest version unless given)
+plexos-sdk create-db my_database.db --seed-zip seeddata/sdk_seed_data.zip
+plexos-sdk create-db gas_model.db --seed-zip seeddata/sdk_seed_data.zip --system-type gas --version 12.03.175
 
 # Create a populated database from a source database's seed data
 plexos-sdk create-from-sql source.db new_model.db electric
@@ -1083,34 +1235,33 @@ if generator.child_memberships:
 
 ### Property Duplicate Detection
 
-The SDK performs comprehensive duplicate detection when adding properties. Two properties are considered duplicates only if **ALL** aspects of the property graph match:
+One data row per **binding**. A second row in a binding fails the PLEXOS run (ERROR 3015), so `add_property` and `batch_add_properties` refuse it whatever its value. `validate()` checks the same key.
 
-- **Membership and Property**: Same membership and property
-- **Band ID**: Same band_id (default is 1)
-- **Value**: Same numeric value
-- **Texts**: Same set of Text objects (data_file_text, time_slice_text, expression_text) - compared by class_id, value, and action_id
-- **Tags**: Same set of Tag objects (data_file_tag, scenario_tag, expression_tag) - compared by object_id and action_id
-- **Date Ranges**: Same date_from and date_to values
+| In the binding | Not in the binding |
+|---|---|
+| membership, property, band (default 1) | value |
+| tag objects (scenario, Variable, data file, timeslice) | memo |
+| texts, by class and value | tag/text action |
+| date_from, date_to | |
 
-**Note:** Memos are **not** part of duplicate detection because they are added after property creation using `add_memo_data()`. Properties with the same property graph but different memos can coexist - the memo is added separately after the property is created.
+- A different scenario, Variable, data file, timeslice, date range or band is a new binding
+- Writing a default, then the real value, into one binding is refused. The error names the stored value and `data_id`
+- Static properties (`is_dynamic=False`) update in place instead
+- Same binding, different action: refused under `"error"` and `"update"`. Use `update_property` or `remove_property`
 
-**Important behaviors:**
-- Properties with different **scenario tags** are considered **unique** (different scenarios = different records)
-- Properties with different **expression tags** (Variables) are considered **unique**
-- Properties with different **data_file_tags** are considered **unique**
-- Properties can have **multiple tags** - all tags are compared as a set
-- Properties with different **date ranges** are considered **unique**
-- Properties with different **band_ids** are considered **unique**
-
-**Example:**
 ```python
-# These are UNIQUE (different scenario tags)
 sdk.add_property(membership, prop, 100.0, scenario_tag=scenario1)  # OK
-sdk.add_property(membership, prop, 100.0, scenario_tag=scenario2)  # OK - different scenario
-
-# This would raise PropertyAlreadyExistsError (exact duplicate)
-sdk.add_property(membership, prop, 100.0, scenario_tag=scenario1)  # Error - duplicate
+sdk.add_property(membership, prop, 100.0, scenario_tag=scenario2)  # OK - new binding
+sdk.add_property(membership, prop, 250.0, scenario_tag=scenario1)  # PropertyAlreadyExistsError
+sdk.add_property(membership, prop, 250.0, scenario_tag=scenario1, if_exists="update")  # replaces 100.0
 ```
+
+`add_property(if_exists=...)` on an occupied binding:
+- `"error"` (default): raise `PropertyAlreadyExistsError`
+- `"ignore"`: return the stored row unchanged
+- `"update"`: overwrite the stored value
+
+`batch_add_properties` has no `if_exists`. An entry on a stored row (except a static upsert), or two entries in one binding, raise and roll back the whole batch. To change stored values use `batch_update_properties`.
 
 ### Data Integrity
 - **Always use transactions** for multiple operations
